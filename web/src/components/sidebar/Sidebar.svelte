@@ -1,4 +1,6 @@
 <script lang="ts">
+    import settings from "$lib/state/settings";
+
     import { t } from "$lib/i18n/translations";
     import { defaultNavPage } from "$lib/subnav";
 
@@ -19,8 +21,8 @@
     let aboutLink = defaultNavPage("about");
 
     $: screenWidth,
-       settingsLink = defaultNavPage("settings"),
-       aboutLink = defaultNavPage("about");
+        (settingsLink = defaultNavPage("settings")),
+        (aboutLink = defaultNavPage("about"));
 </script>
 
 <svelte:window bind:innerWidth={screenWidth} />
@@ -29,26 +31,16 @@
     <CobaltLogo />
     <div id="sidebar-tabs" role="tablist">
         <div id="sidebar-actions" class="sidebar-inner-container">
-            <SidebarTab tabName="save" tabLink="/">
-                <IconDownload />
-            </SidebarTab>
-            <SidebarTab tabName="remux" tabLink="/remux" beta>
-                <IconRepeat />
-            </SidebarTab>
+            <SidebarTab name="save" path="/" icon={IconDownload} />
+            {#if !$settings.appearance.hideRemuxTab}
+                <SidebarTab name="remux" path="/remux" icon={IconRepeat} beta />
+            {/if}
         </div>
         <div id="sidebar-info" class="sidebar-inner-container">
-            <SidebarTab tabName="settings" tabLink={settingsLink}>
-                <IconSettings />
-            </SidebarTab>
-            <SidebarTab tabName="donate" tabLink="/donate">
-                <IconHeart />
-            </SidebarTab>
-            <SidebarTab tabName="updates" tabLink="/updates">
-                <IconComet />
-            </SidebarTab>
-            <SidebarTab tabName="about" tabLink={aboutLink}>
-                <IconInfoCircle />
-            </SidebarTab>
+            <SidebarTab name="settings" path={settingsLink} icon={IconSettings} />
+            <SidebarTab name="donate" path="/donate" icon={IconHeart} />
+            <SidebarTab name="updates" path="/updates" icon={IconComet} />
+            <SidebarTab name="about" path={aboutLink} icon={IconInfoCircle} />
         </div>
     </div>
 </nav>
@@ -70,10 +62,9 @@
 
     #sidebar-tabs {
         height: 100%;
-        width: var(--sidebar-width);
         justify-content: space-between;
         padding: var(--sidebar-inner-padding);
-        padding-bottom: var(--border-radius);
+        padding-bottom: var(--sidebar-tab-padding);
         overflow-y: scroll;
     }
 
@@ -92,6 +83,7 @@
             justify-content: center;
             align-items: flex-start;
             z-index: 3;
+            padding: var(--sidebar-inner-padding) 0;
         }
 
         #sidebar::before {
@@ -108,18 +100,26 @@
         #sidebar-tabs {
             overflow-y: visible;
             overflow-x: scroll;
-            padding-bottom: 0;
-            padding: var(--sidebar-inner-padding) 0;
-            width: unset;
+            padding: 0;
             height: fit-content;
         }
 
         #sidebar :global(.sidebar-inner-container:first-child) {
-            padding-left: calc(var(--border-radius) * 2);
+            padding-left: calc(var(--border-radius) * 1.5);
         }
 
         #sidebar :global(.sidebar-inner-container:last-child) {
-            padding-right: calc(var(--border-radius) * 2);
+            padding-right: calc(var(--border-radius) * 1.5);
+        }
+
+        #sidebar :global(.sidebar-inner-container:first-child:dir(rtl)) {
+            padding-left: 0;
+            padding-right: calc(var(--border-radius) * 1.5);
+        }
+
+        #sidebar :global(.sidebar-inner-container:last-child:dir(rtl)) {
+            padding-right: 0;
+            padding-left: calc(var(--border-radius) * 1.5);
         }
     }
 

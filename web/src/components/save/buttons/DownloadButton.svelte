@@ -1,207 +1,63 @@
 <script lang="ts">
-    import "@fontsource-variable/noto-sans-mono";
-    import { onMount } from "svelte";
-
-    import settings from "$lib/state/settings";
-    import API from "$lib/api/api";
-    import APIUrl from "$lib/state/api-url";
-    import lazySettingGetter from "$lib/settings/lazy-get";
-    import { apiOverrideWarning } from "$lib/api/safety-warning";
-
-    import env from "$lib/env";
+    import { onDestroy } from "svelte";
     import { t } from "$lib/i18n/translations";
-    import { createDialog } from "$lib/dialogs";
-    import type { DialogInfo } from "$lib/types/dialog";
-    import { downloadFile } from "$lib/download";
-    import {
-        UnauthenticatedCobaltAPI,
-        TurnstileCobaltAPI,
-        type CobaltAPIClient
-    } from "@imput/cobalt-client";
+    import { hapticSwitch } from "$lib/haptics";
+    import { savingHandler } from "$lib/api/saving-handler";
+    import { downloadButtonState } from "$lib/state/omnibox";
+
+    import type { CobaltDownloadButtonState } from "$lib/types/omnibox";
 
     export let url: string;
     export let disabled = false;
+    export let loading = false;
 
     $: buttonText = ">>";
     $: buttonAltText = $t("a11y.save.download");
 
-    let defaultErrorPopup: DialogInfo = {
-        id: "save-error",
-        type: "small",
-        meowbalt: "error",
-        buttons: [
-            {
-                text: $t("button.gotit"),
-                main: true,
-                action: () => {},
-            },
-        ],
-    };
-
     type DownloadButtonState = "idle" | "think" | "check" | "done" | "error";
 
-    const changeDownloadButton = (state: DownloadButtonState) => {
-        disabled = state !== "idle";
+    const unsubscribe = downloadButtonState.subscribe(
+        (state: CobaltDownloadButtonState) => {
+            disabled = state !== "idle";
+            loading = state === "think" || state === "check";
 
-        buttonText = {
-            idle: ">>",
-            think: "...",
-            check: "..?",
-            done: ">>>",
-            error: "!!",
-        }[state];
+            buttonText = {
+                idle: ">>",
+                think: "...",
+                check: "..?",
+                done: ">>>",
+                error: "!!",
+            }[state];
 
-        buttonAltText = $t(
-            {
-                idle: "a11y.save.download",
-                think: "a11y.save.download.think",
-                check: "a11y.save.download.check",
-                done: "a11y.save.download.done",
-                error: "a11y.save.download.error",
-            }[state]
-        );
-
-        // states that don't wait for anything, and thus can
-        // transition back to idle after some period of time.
-        const final: DownloadButtonState[] = ["done", "error"];
-        if (final.includes(state)) {
-            setTimeout(() => changeDownloadButton("idle"), 1500);
-        }
-    };
-
-    let client: CobaltAPIClient;
-
-    $: client?.setBaseURL($APIUrl);
-
-    onMount(() => {
-        if (env.TURNSTILE_KEY) {
-            client = new TurnstileCobaltAPI(window.turnstile);
-        } else {
-            client = new UnauthenticatedCobaltAPI();
-        }
-        client.setBaseURL($APIUrl);
-    });
-
-    export const download = async (link: string) => {
-        changeDownloadButton("think");
-
-        const getSetting = lazySettingGetter($settings);
-
-        const request = {
-            url: link,
-
-            downloadMode: getSetting("save", "downloadMode"),
-            audioBitrate: getSetting("save", "audioBitrate"),
-            audioFormat: getSetting("save", "audioFormat"),
-            tiktokFullAudio: getSetting("save", "tiktokFullAudio"),
-            youtubeDubBrowserLang: getSetting("save", "youtubeDubBrowserLang"),
-
-            youtubeVideoCodec: getSetting("save", "youtubeVideoCodec"),
-            videoQuality: getSetting("save", "videoQuality"),
-
-            filenameStyle: getSetting("save", "filenameStyle"),
-            disableMetadata: getSetting("save", "disableMetadata"),
-
-            twitterGif: getSetting("save", "twitterGif"),
-            tiktokH265: getSetting("save", "tiktokH265"),
-
-            alwaysProxy: getSetting("privacy", "alwaysProxy"),
-        }
-
-        await apiOverrideWarning();
-        const response = await client.request(request);
-
-        if (!response) {
-            changeDownloadButton("error");
-
-            return createDialog({
-                ...defaultErrorPopup,
-                bodyText: $t("error.api.unreachable"),
-            });
-        }
-
-        if (response.status === "error") {
-            changeDownloadButton("error");
-
-            return createDialog({
-                ...defaultErrorPopup,
-                bodyText: $t(response.error.code, response?.error?.context),
-            });
-        }
-
-        if (response.status === "redirect") {
-            changeDownloadButton("done");
-
-            return downloadFile({
-                url: response.url,
-            });
-        }
-
-        if (response.status === "tunnel") {
-            changeDownloadButton("check");
-
-            const probeResult = await API.probeCobaltTunnel(response.url);
-
-            if (probeResult === 200) {
-                changeDownloadButton("done");
-
-                return downloadFile({
-                    url: response.url,
-                });
-            } else {
-                changeDownloadButton("error");
-
-                return createDialog({
-                    ...defaultErrorPopup,
-                    bodyText: $t("error.tunnel.probe"),
-                });
-            }
-        }
-
-        if (response.status === "picker") {
-            changeDownloadButton("done");
-            const buttons = [
+            buttonAltText = $t(
                 {
-                    text: $t("button.done"),
-                    main: true,
-                    action: () => {},
-                },
-            ];
+                    idle: "a11y.save.download",
+                    think: "a11y.save.download.think",
+                    check: "a11y.save.download.check",
+                    done: "a11y.save.download.done",
+                    error: "a11y.save.download.error",
+                }[state]
+            );
 
-            if (response.audio) {
-                const pickerAudio = response.audio;
-                buttons.unshift({
-                    text: $t("button.download.audio"),
-                    main: false,
-                    action: () => {
-                        downloadFile({
-                            url: pickerAudio,
-                        });
-                    },
-                });
+            // states that don't wait for anything, and thus can
+            // transition back to idle after some period of time.
+            const final: DownloadButtonState[] = ["done", "error"];
+            if (final.includes(state)) {
+                setTimeout(() => downloadButtonState.set("idle"), 1500);
             }
-
-            return createDialog({
-                id: "download-picker",
-                type: "picker",
-                items: response.picker,
-                buttons,
-            });
         }
+    );
 
-        changeDownloadButton("error");
-
-        return createDialog({
-            ...defaultErrorPopup,
-            bodyText: $t("error.api.unknown_response"),
-        });
-    };
+    onDestroy(() => unsubscribe());
 </script>
 
 <button
     id="download-button"
     {disabled}
-    on:click={() => download(url)}
+    on:click={() => {
+        hapticSwitch();
+        savingHandler({ url });
+    }}
     aria-label={buttonAltText}
 >
     <span id="download-state">{buttonText}</span>
@@ -215,9 +71,12 @@
 
         height: 100%;
         min-width: 48px;
+        width: 48px;
 
         border-radius: 0;
-        padding: 0 12px;
+
+        /* visually align the button, +1.5px because of inset box-shadow on parent */
+        padding: 0 13.5px 0 12px;
 
         background: none;
         box-shadow: none;
@@ -228,14 +87,22 @@
         border-bottom-right-radius: var(--border-radius);
     }
 
-    #download-button:focus-visible {
-        box-shadow: 0 0 0 2px var(--blue) inset;
+    #download-button:dir(rtl) {
+        border-left: 0;
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
+
+        border-right: 1.5px var(--input-border) solid;
+        border-top-left-radius: var(--border-radius);
+        border-bottom-left-radius: var(--border-radius);
+
+        direction: ltr;
+        padding: 0 12px 0 15px;
     }
 
     #download-state {
         font-size: 24px;
-        font-family: "Noto Sans Mono Variable", "Noto Sans Mono",
-            "IBM Plex Mono", monospace;
+        font-family: "Noto Sans Mono", "IBM Plex Mono", monospace;
         font-weight: 400;
 
         text-align: center;
@@ -247,19 +114,25 @@
 
     #download-button:disabled {
         cursor: unset;
-        opacity: 0.7;
+        color: var(--gray);
     }
 
     :global(#input-container.focused) #download-button {
         border-left: 2px var(--secondary) solid;
     }
 
+    :global(#input-container.focused) #download-button:dir(rtl) {
+        border-left: 0;
+        border-right: 2px var(--secondary) solid;
+    }
+
     @media (hover: hover) {
-        #download-button:hover {
+        #download-button:hover:not(:disabled) {
             background: var(--button-hover-transparent);
         }
-        #download-button:disabled:hover {
-            background: none;
-        }
+    }
+
+    #download-button:active:not(:disabled) {
+        background: var(--button-press-transparent);
     }
 </style>

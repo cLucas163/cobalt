@@ -1,6 +1,6 @@
 <script lang="ts">
     import { tick } from "svelte";
-    import { killDialog } from "$lib/dialogs";
+    import { killDialog } from "$lib/state/dialogs";
 
     import DialogBackdropClose from "$components/dialog/DialogBackdropClose.svelte";
 
@@ -16,9 +16,14 @@
         if (dialogParent) {
             closing = true;
             open = false;
+
+            // wait 150ms for the closing animation to finish
             setTimeout(() => {
-                dialogParent.close();
-                killDialog();
+                // check if dialog parent is still present
+                if (dialogParent) {
+                    dialogParent.close();
+                    killDialog();
+                }
             }, 150);
         }
     };

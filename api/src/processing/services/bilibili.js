@@ -1,18 +1,7 @@
-import { genericUserAgent, env } from "../../config.js";
+import { env } from "../../config.js";
+import { resolveRedirectingURL } from "../url.js";
 
 // TO-DO: higher quality downloads (currently requires an account)
-
-function com_resolveShortlink(shortId) {
-    return fetch(`https://b23.tv/${shortId}`, { redirect: 'manual' })
-            .then(r => r.status > 300 && r.status < 400 && r.headers.get('location'))
-            .then(url => {
-                if (!url) return;
-                const path = new URL(url).pathname;
-                if (path.startsWith('/video/'))
-                    return path.split('/')[2];
-            })
-            .catch(() => {})
-}
 
 function getBest(content) {
     return content?.filter(v => v.baseUrl || v.url)
@@ -28,10 +17,16 @@ function extractBestQuality(dashData) {
     return [ bestVideo, bestAudio ];
 }
 
-async function com_download(id) {
-    let html = await fetch(`https://bilibili.com/video/${id}`, {
+async function com_download(id, partId) {
+    const url = new URL(`https://bilibili.com/video/${id}`);
+
+    if (partId) {
+        url.searchParams.set('p', partId);
+    }
+
+    const html = await fetch(url, {
         headers: {
-            "user-agent": genericUserAgent
+            "user-agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
         }
     })
     .then(r => r.text())
@@ -45,7 +40,10 @@ async function com_download(id) {
         return { error: "fetch.empty" };
     }
 
-    let streamData = JSON.parse(html.split('<script>window.__playinfo__=')[1].split('</script>')[0]);
+    const streamData = JSON.parse(
+        html.split('<script>window.__playinfo__=')[1].split('</script>')[0]
+    );
+
     if (streamData.data.timelength > env.durationLimit * 1000) {
         return { error: "content.too_long" };
     }
@@ -55,10 +53,15 @@ async function com_download(id) {
         return { error: "fetch.empty" };
     }
 
+    let filenameBase = `bilibili_${id}`;
+    if (partId) {
+        filenameBase += `_${partId}`;
+    }
+
     return {
         urls: [video.baseUrl, audio.baseUrl],
-        audioFilename: `bilibili_${id}_audio`,
-        filename: `bilibili_${id}_${video.width}x${video.height}.mp4`
+        audioFilename: `${filenameBase}_audio`,
+        filename: `${filenameBase}_${video.width}x${video.height}.mp4`,
     };
 }
 
@@ -97,13 +100,14 @@ async function tv_download(id) {
     };
 }
 
-export default async function({ comId, tvId, comShortLink }) {
+export default async function({ comId, tvId, comShortLink, partId }) {
     if (comShortLink) {
-        comId = await com_resolveShortlink(comShortLink);
+        const patternMatch = await resolveRedirectingURL(`https://b23.tv/${comShortLink}`);
+        comId = patternMatch?.comId;
     }
 
     if (comId) {
-        return com_download(comId);
+        return com_download(comId, partId);
     } else if (tvId) {
         return tv_download(tvId);
     }

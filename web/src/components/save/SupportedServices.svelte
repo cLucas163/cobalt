@@ -1,13 +1,17 @@
 <script lang="ts">
     import { t } from "$lib/i18n/translations";
-    import { getServerInfo, cachedInfo } from "$lib/api/server-info";
+    import cachedInfo from "$lib/state/server-info";
+    import { getServerInfo } from "$lib/api/server-info";
 
     import Skeleton from "$components/misc/Skeleton.svelte";
     import IconPlus from "@tabler/icons-svelte/IconPlus.svelte";
+    import PopoverContainer from "$components/misc/PopoverContainer.svelte";
 
     let services: string[] = [];
 
     $: expanded = false;
+
+    let servicesContainer: HTMLDivElement;
     $: loaded = false;
 
     const loadInfo = async () => {
@@ -18,18 +22,23 @@
             services = $cachedInfo.info.cobalt.services;
         }
     };
+
+    const popoverAction = async () => {
+        expanded = !expanded;
+        if (expanded && services.length === 0) {
+            await loadInfo();
+        }
+        if (expanded) {
+            servicesContainer.focus();
+        }
+    };
 </script>
 
-<div id="supported-services">
+<div id="supported-services" class:expanded>
     <button
         id="services-button"
-        class:expanded
-        on:click={async () => {
-            expanded = !expanded;
-            if (expanded && services.length === 0) {
-                await loadInfo();
-            }
-        }}
+        class="button"
+        on:click={popoverAction}
         aria-label={$t(`save.services.title_${expanded ? "hide" : "show"}`)}
     >
         <div class="expand-icon">
@@ -38,8 +47,12 @@
         <span class="title">{$t("save.services.title")}</span>
     </button>
 
-    <div id="services-popover" class:expanded>
-        <div id="services-container">
+    <PopoverContainer id="services-popover" {expanded}>
+        <div
+            id="services-container"
+            bind:this={servicesContainer}
+            tabindex="-1"
+        >
             {#if loaded}
                 {#each services as service}
                     <div class="service-item">{service}</div>
@@ -57,7 +70,7 @@
         <div id="services-disclaimer" class="subtext">
             {$t("save.services.disclaimer")}
         </div>
-    </div>
+    </PopoverContainer>
 </div>
 
 <style>
@@ -70,29 +83,6 @@
         height: 35px;
     }
 
-    #services-popover {
-        display: flex;
-        flex-direction: column;
-        transition: transform 0.2s cubic-bezier(0.53, 0.05, 0.23, 0.99);
-        border-radius: 18px;
-        background: var(--button);
-        box-shadow:
-            var(--button-box-shadow),
-            0 0 10px 10px var(--button-stroke);
-
-        transform: scale(0);
-        transform-origin: top center;
-        position: relative;
-
-        padding: 12px;
-        gap: 6px;
-        top: 6px;
-    }
-
-    #services-popover.expanded {
-        transform: scale(1);
-    }
-
     #services-button {
         gap: 9px;
         padding: 7px 13px 7px 10px;
@@ -103,9 +93,12 @@
         font-size: 13px;
         font-weight: 500;
         background: none;
+        transition:
+            background 0.2s,
+            box-shadow 0.1s;
     }
 
-    #services-button:not(:focus-visible) {
+    #services-button:not(:active) {
         box-shadow: none;
     }
 
@@ -119,17 +112,37 @@
         background: var(--button-elevated);
         padding: 0;
         box-shadow: none;
-        transition: transform 0.2s;
+        transition:
+            background 0.2s,
+            transform 0.2s;
     }
 
-    #services-button:active .expand-icon {
-        background: var(--button-elevated-hover);
+    #services-button:active {
+        background: var(--button-hover-transparent);
     }
 
     @media (hover: hover) {
+        #services-button:hover {
+            background: var(--button-hover-transparent);
+        }
+
+        #services-button:active {
+            background: var(--button-press-transparent);
+        }
+
         #services-button:hover .expand-icon {
             background: var(--button-elevated-hover);
         }
+    }
+
+    @media (hover: none) {
+        #services-button:active {
+            box-shadow: none;
+        }
+    }
+
+    #services-button:active .expand-icon {
+        background: var(--button-elevated-press);
     }
 
     .expand-icon :global(svg) {
@@ -162,6 +175,14 @@
 
     #services-disclaimer {
         padding: 0;
+        user-select: none;
+        -webkit-user-select: none;
+    }
+
+    .expanded #services-disclaimer {
+        padding: 0;
+        user-select: text;
+        -webkit-user-select: text;
     }
 
     @media screen and (max-width: 535px) {

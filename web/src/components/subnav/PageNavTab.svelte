@@ -3,25 +3,26 @@
 
     import IconChevronRight from "@tabler/icons-svelte/IconChevronRight.svelte";
 
-    export let tabPath: string;
-    export let tabTitle: string;
-    export let iconColor: "gray" | "blue" | "green" = "gray";
+    export let path: string;
+    export let title: string;
+    export let icon: ConstructorOfATypedSvelteComponent;
+    export let iconColor: "gray" | "blue" | "green" | "magenta" | "purple" | "orange" = "gray";
 
-    $: isActive = $page.url.pathname === tabPath;
+    $: isActive = $page.url.pathname === path;
 </script>
 
 <a
     class="subnav-tab"
-    href={tabPath}
+    href={path}
     class:active={isActive}
     role="button"
 >
-    <div class="subnav-tab-left">
-        <div class="tab-icon" style="background: var(--{iconColor})">
-            <slot></slot>
+    <div class="subnav-tab-left" style="--icon-color: var(--{iconColor})">
+        <div class="tab-icon">
+            <svelte:component this={icon} />
         </div>
         <div class="subnav-tab-text">
-            {tabTitle}
+            {title}
         </div>
     </div>
     <div class="subnav-tab-chevron">
@@ -40,13 +41,14 @@
         gap: calc(var(--small-padding) * 2);
         padding: var(--big-padding);
         font-weight: 500;
-        background: var(--primary);
         color: var(--button-text);
         border-radius: var(--border-radius);
         overflow: hidden;
 
         text-decoration: none;
         text-decoration-line: none;
+
+        cursor: pointer;
     }
 
     .subnav-tab-left {
@@ -63,6 +65,7 @@
         align-items: center;
         padding: var(--small-padding);
         border-radius: 5px;
+        background: var(--icon-color);
     }
 
     .subnav-tab .tab-icon :global(svg) {
@@ -70,6 +73,19 @@
         stroke: var(--white);
         height: 20px;
         width: 20px;
+    }
+
+    .subnav-tab:not(.active) .tab-icon {
+        background: rgba(0, 0, 0, 0.05);
+        box-shadow: var(--button-box-shadow);
+    }
+
+    :global([data-theme="dark"]) .subnav-tab:not(.active) .tab-icon {
+        background: rgba(255, 255, 255, 0.1);
+    }
+
+    .subnav-tab:not(.active) .tab-icon :global(svg) {
+        stroke: var(--icon-color);
     }
 
     .subnav-tab-chevron :global(svg) {
@@ -80,19 +96,26 @@
         width: 18px;
     }
 
+    .subnav-tab-chevron:dir(rtl) {
+        transform: scale(-1, 1);
+    }
+
     @media (hover: hover) {
         .subnav-tab:hover {
             background: var(--button-hover-transparent);
         }
     }
 
-    .subnav-tab:active {
-        background: var(--button-hover-transparent);
+    .subnav-tab:active,
+    .subnav-tab:focus:hover:not(.active) {
+        background: var(--button-press-transparent);
+        box-shadow: var(--button-box-shadow);
     }
 
     .subnav-tab.active {
         background: var(--secondary);
         color: var(--primary);
+        cursor: default;
     }
 
     .subnav-tab-text {
@@ -110,7 +133,7 @@
         .subnav-tab:not(:last-child) {
             border-bottom-left-radius: 0;
             border-bottom-right-radius: 0;
-            box-shadow: 48px 3px 0px -1.8px var(--button-stroke);
+            box-shadow: 48px 3px 0px -2px var(--button-stroke);
         }
 
         .subnav-tab:not(:first-child) {

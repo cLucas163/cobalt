@@ -1,13 +1,15 @@
 import { request } from "undici";
 import { Readable } from "node:stream";
 import { closeRequest, getHeaders, pipe } from "./shared.js";
-import { handleHlsPlaylist, isHlsRequest } from "./internal-hls.js";
+import { handleHlsPlaylist, isHlsResponse, probeInternalHLSTunnel } from "./internal-hls.js";
 
 const CHUNK_SIZE = BigInt(8e6); // 8 MB
 const min = (a, b) => a < b ? a : b;
 
+const serviceNeedsChunks = new Set(["youtube", "vk"]);
+
 async function* readChunks(streamInfo, size) {
-    let read = 0n;
+    let read = 0n, chunksSinceTransplant = 0;
     while (read < size) {
         if (streamInfo.controller.signal.aborted) {
             throw new Error("controller aborted");
@@ -15,12 +17,23 @@ async function* readChunks(streamInfo, size) {
 
         const chunk = await request(streamInfo.url, {
             headers: {
-                ...getHeaders('youtube'),
+                ...getHeaders(streamInfo.service),
                 Range: `bytes=${read}-${read + CHUNK_SIZE}`
             },
             dispatcher: streamInfo.dispatcher,
-            signal: streamInfo.controller.signal
+            signal: streamInfo.controller.signal,
+            maxRedirections: 4
         });
+
+        if (chunk.statusCode === 403 && chunksSinceTransplant >= 3 && streamInfo.transplant) {
+            chunksSinceTransplant = 0;
+            try {
+                await streamInfo.transplant(streamInfo.dispatcher);
+                continue;
+            } catch {}
+        }
+
+        chunksSinceTransplant++;
 
         const expected = min(CHUNK_SIZE, size - read);
         const received = BigInt(chunk.headers['content-length']);
@@ -37,19 +50,30 @@ async function* readChunks(streamInfo, size) {
     }
 }
 
-async function handleYoutubeStream(streamInfo, res) {
+async function handleChunkedStream(streamInfo, res) {
     const { signal } = streamInfo.controller;
     const cleanup = () => (res.end(), closeRequest(streamInfo.controller));
 
     try {
-        const req = await fetch(streamInfo.url, {
-            headers: getHeaders('youtube'),
-            method: 'HEAD',
-            dispatcher: streamInfo.dispatcher,
-            signal
-        });
+        let req, attempts = 3;
+        while (attempts--) {
+            req = await fetch(streamInfo.url, {
+                headers: getHeaders(streamInfo.service),
+                method: 'HEAD',
+                dispatcher: streamInfo.dispatcher,
+                signal
+            });
 
-        streamInfo.url = req.url;
+            streamInfo.url = req.url;
+            if (req.status === 403 && streamInfo.transplant) {
+                try {
+                    await streamInfo.transplant(streamInfo.dispatcher);
+                } catch {
+                    break;
+                }
+            } else break;
+        }
+
         const size = BigInt(req.headers.get('content-length'));
 
         if (req.status !== 200 || !size) {
@@ -83,7 +107,7 @@ async function handleGenericStream(streamInfo, res) {
     const cleanup = () => res.end();
 
     try {
-        const req = await request(streamInfo.url, {
+        const fileResponse = await request(streamInfo.url, {
             headers: {
                 ...Object.fromEntries(streamInfo.headers),
                 host: undefined
@@ -93,19 +117,25 @@ async function handleGenericStream(streamInfo, res) {
             maxRedirections: 16
         });
 
-        res.status(req.statusCode);
-        req.body.on('error', () => {});
+        res.status(fileResponse.statusCode);
+        fileResponse.body.on('error', () => {});
 
-        for (const [ name, value ] of Object.entries(req.headers))
-            res.setHeader(name, value)
+        const isHls = isHlsResponse(fileResponse, streamInfo);
 
-        if (req.statusCode < 200 || req.statusCode > 299)
+        for (const [ name, value ] of Object.entries(fileResponse.headers)) {
+            if (!isHls || name.toLowerCase() !== 'content-length') {
+                res.setHeader(name, value);
+            }
+        }
+
+        if (fileResponse.statusCode < 200 || fileResponse.statusCode > 299) {
             return cleanup();
+        }
 
-        if (isHlsRequest(req)) {
-            await handleHlsPlaylist(streamInfo, req, res);
+        if (isHls) {
+            await handleHlsPlaylist(streamInfo, fileResponse, res);
         } else {
-            pipe(req.body, res, cleanup);
+            pipe(fileResponse.body, res, cleanup);
         }
     } catch {
         closeRequest(streamInfo.controller);
@@ -114,9 +144,50 @@ async function handleGenericStream(streamInfo, res) {
 }
 
 export function internalStream(streamInfo, res) {
-    if (streamInfo.service === 'youtube') {
-        return handleYoutubeStream(streamInfo, res);
+    if (streamInfo.headers) {
+        streamInfo.headers.delete('icy-metadata');
+    }
+
+    if (serviceNeedsChunks.has(streamInfo.service) && !streamInfo.isHLS) {
+        return handleChunkedStream(streamInfo, res);
     }
 
     return handleGenericStream(streamInfo, res);
+}
+
+export async function probeInternalTunnel(streamInfo) {
+    try {
+        const signal = AbortSignal.timeout(3000);
+        const headers = {
+            ...Object.fromEntries(streamInfo.headers || []),
+            ...getHeaders(streamInfo.service),
+            host: undefined,
+            range: undefined
+        };
+
+        if (streamInfo.isHLS) {
+            return probeInternalHLSTunnel({
+                ...streamInfo,
+                signal,
+                headers
+            });
+        }
+
+        const response = await request(streamInfo.url, {
+            method: 'HEAD',
+            headers,
+            dispatcher: streamInfo.dispatcher,
+            signal,
+            maxRedirections: 16
+        });
+
+        if (response.statusCode !== 200)
+            throw "status is not 200 OK";
+
+        const size = +response.headers['content-length'];
+        if (isNaN(size))
+            throw "content-length is not a number";
+
+        return size;
+    } catch {}
 }

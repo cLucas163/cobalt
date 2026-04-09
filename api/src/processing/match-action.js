@@ -3,27 +3,48 @@ import createFilename from "./create-filename.js";
 import { createResponse } from "./request.js";
 import { audioIgnore } from "./service-config.js";
 import { createStream } from "../stream/manage.js";
+import { splitFilenameExtension } from "../misc/utils.js";
+import { convertLanguageCode } from "../misc/language-codes.js";
 
-export default function({ r, host, audioFormat, isAudioOnly, isAudioMuted, disableMetadata, filenameStyle, twitterGif, requestIP, audioBitrate, alwaysProxy }) {
+const extraProcessingTypes = new Set(["merge", "remux", "mute", "audio", "gif"]);
+
+export default function({
+    r,
+    host,
+    audioFormat,
+    isAudioOnly,
+    isAudioMuted,
+    disableMetadata,
+    filenameStyle,
+    convertGif,
+    requestIP,
+    audioBitrate,
+    alwaysProxy,
+    localProcessing,
+}) {
     let action,
         responseType = "tunnel",
         defaultParams = {
-            u: r.urls,
+            url: r.urls,
             headers: r.headers,
             service: host,
             filename: r.filenameAttributes ?
                     createFilename(r.filenameAttributes, filenameStyle, isAudioOnly, isAudioMuted) : r.filename,
             fileMetadata: !disableMetadata ? r.fileMetadata : false,
-            requestIP
+            requestIP,
+            originalRequest: r.originalRequest,
+            subtitles: r.subtitles,
+            cover: !disableMetadata ? r.cover : false,
+            cropCover: !disableMetadata ? r.cropCover : false,
         },
         params = {};
 
     if (r.isPhoto) action = "photo";
     else if (r.picker) action = "picker"
-    else if (r.isGif && twitterGif) action = "gif";
+    else if (r.isGif && convertGif) action = "gif";
     else if (isAudioOnly) action = "audio";
     else if (isAudioMuted) action = "muteVideo";
-    else if (r.isM3U8) action = "m3u8";
+    else if (r.isHLS) action = "hls";
     else action = "video";
 
     if (action === "picker" || action === "audio") {
@@ -32,10 +53,11 @@ export default function({ r, host, audioFormat, isAudioOnly, isAudioMuted, disab
     }
 
     if (action === "muteVideo" && isAudioMuted && !r.filenameAttributes) {
-        const parts = r.filename.split(".");
-        const ext = parts.pop();
-
-        defaultParams.filename = `${parts.join(".")}_mute.${ext}`;
+        const [ name, ext ] = splitFilenameExtension(r.filename);
+        defaultParams.filename = `${name}_mute.${ext}`;
+    } else if (action === "gif") {
+        const [ name ] = splitFilenameExtension(r.filename);
+        defaultParams.filename = `${name}.gif`;
     }
 
     switch (action) {
@@ -45,27 +67,29 @@ export default function({ r, host, audioFormat, isAudioOnly, isAudioMuted, disab
             });
 
         case "photo":
-            responseType = "redirect";
+            params = { type: "proxy" };
             break;
 
         case "gif":
             params = { type: "gif" };
             break;
 
-        case "m3u8":
+        case "hls":
             params = {
-                type: Array.isArray(r.urls) ? "merge" : "remux"
+                type: Array.isArray(r.urls) ? "merge" : "remux",
+                isHLS: true,
             }
             break;
 
         case "muteVideo":
             let muteType = "mute";
-            if (Array.isArray(r.urls) && !r.isM3U8) {
+            if (Array.isArray(r.urls) && !r.isHLS) {
                 muteType = "proxy";
             }
             params = {
                 type: muteType,
-                u: Array.isArray(r.urls) ? r.urls[0] : r.urls
+                url: Array.isArray(r.urls) ? r.urls[0] : r.urls,
+                isHLS: r.isHLS
             }
             if (host === "reddit" && r.typeId === "redirect") {
                 responseType = "redirect";
@@ -90,14 +114,15 @@ export default function({ r, host, audioFormat, isAudioOnly, isAudioMuted, disab
                     }
                     params = {
                         picker: r.picker,
-                        u: createStream({
+                        url: createStream({
                             service: "tiktok",
                             type: audioStreamType,
-                            u: r.urls,
+                            url: r.urls,
                             headers: r.headers,
-                            filename: r.audioFilename,
+                            filename: `${r.audioFilename}.${audioFormat}`,
                             isAudioOnly: true,
                             audioFormat,
+                            audioBitrate
                         })
                     }
                     break;
@@ -119,9 +144,12 @@ export default function({ r, host, audioFormat, isAudioOnly, isAudioMuted, disab
                     params = { type: r.type };
                     break;
 
+                case "rutube":
                 case "vimeo":
                     if (Array.isArray(r.urls)) {
-                        params = { type: "merge" }
+                        params = { type: "merge" };
+                    } else if (r.subtitles) {
+                        params = { type: "remux" };
                     } else {
                         responseType = "redirect";
                     }
@@ -135,19 +163,32 @@ export default function({ r, host, audioFormat, isAudioOnly, isAudioMuted, disab
                     }
                     break;
 
+                case "loom":
+                    if (r.subtitles) {
+                        params = { type: "remux" };
+                    } else {
+                        responseType = "redirect";
+                    }
+                    break;
+
                 case "vk":
                 case "tiktok":
+                    params = {
+                        type: r.subtitles ? "remux" : "proxy"
+                    };
+                    break;
+
+                case "ok":
+                case "newgrounds":
                     params = { type: "proxy" };
                     break;
 
                 case "facebook":
-                case "vine":
                 case "instagram":
                 case "tumblr":
                 case "pinterest":
                 case "streamable":
                 case "snapchat":
-                case "loom":
                 case "twitch":
                     responseType = "redirect";
                     break;
@@ -155,9 +196,9 @@ export default function({ r, host, audioFormat, isAudioOnly, isAudioMuted, disab
             break;
 
         case "audio":
-            if (audioIgnore.includes(host) || (host === "reddit" && r.typeId === "redirect")) {
+            if (audioIgnore.has(host) || (host === "reddit" && r.typeId === "redirect")) {
                 return createResponse("error", {
-                    code: "error.api.fetch.empty"
+                    code: "error.api.service.audio_not_supported"
                 })
             }
 
@@ -181,18 +222,20 @@ export default function({ r, host, audioFormat, isAudioOnly, isAudioMuted, disab
                 }
             }
 
-            if (r.isM3U8 || host === "vimeo") {
+            if (r.isHLS || host === "vimeo") {
                 copy = false;
                 processType = "audio";
             }
 
             params = {
                 type: processType,
-                u: Array.isArray(r.urls) ? r.urls[1] : r.urls,
+                url: Array.isArray(r.urls) ? r.urls[1] : r.urls,
 
                 audioBitrate,
                 audioCopy: copy,
                 audioFormat,
+
+                isHLS: r.isHLS,
             }
             break;
     }
@@ -201,10 +244,39 @@ export default function({ r, host, audioFormat, isAudioOnly, isAudioMuted, disab
         defaultParams.filename += `.${audioFormat}`;
     }
 
+    // alwaysProxy is set to true in match.js if localProcessing is forced
     if (alwaysProxy && responseType === "redirect") {
         responseType = "tunnel";
         params.type = "proxy";
     }
 
-    return createResponse(responseType, {...defaultParams, ...params})
+    // TODO: add support for HLS
+    // (very painful)
+    if (!params.isHLS && responseType !== "picker") {
+        const isPreferredWithExtra =
+            localProcessing === "preferred" && extraProcessingTypes.has(params.type);
+
+        if (localProcessing === "forced" || isPreferredWithExtra) {
+            responseType = "local-processing";
+        }
+    }
+
+    // extractors usually return ISO 639-1 language codes,
+    // but video players expect ISO 639-2, so we convert them here
+    const sublanguage = defaultParams.fileMetadata?.sublanguage;
+    if (sublanguage && sublanguage.length !== 3) {
+        const code = convertLanguageCode(sublanguage);
+        if (code) {
+            defaultParams.fileMetadata.sublanguage = code;
+        } else {
+            // if a language code couldn't be converted,
+            // then we don't want it at all
+            delete defaultParams.fileMetadata.sublanguage;
+        }
+    }
+
+    return createResponse(
+        responseType,
+        { ...defaultParams, ...params }
+    );
 }

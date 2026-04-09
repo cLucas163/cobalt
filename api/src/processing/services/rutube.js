@@ -1,7 +1,5 @@
 import HLS from "hls-parser";
-
 import { env } from "../../config.js";
-import { cleanString } from "../../misc/utils.js";
 
 async function requestJSON(url) {
     try {
@@ -15,7 +13,7 @@ const delta = (a, b) => Math.abs(a - b);
 export default async function(obj) {
     if (obj.yappyId) {
         const yappy = await requestJSON(
-            `https://rutube.ru/pangolin/api/web/yappy/yappypage/?client=wdp&videoId=${obj.yappyId}&page=1&page_size=15`
+            `https://rutube.ru/pangolin/api/web/yappy/v4/yappypage/?client=wdp&videoId=${obj.yappyId}&page=1&page_size=1`
         )
         const yappyURL = yappy?.results?.find(r => r.id === obj.yappyId)?.link;
         if (!yappyURL) return { error: "fetch.empty" };
@@ -34,6 +32,10 @@ export default async function(obj) {
 
     const play = await requestJSON(requestURL);
     if (!play) return { error: "fetch.fail" };
+
+    if (play.detail?.type === "blocking_rule") {
+        return { error: "content.video.region" };
+    }
 
     if (play.detail || !play.video_balancer) return { error: "fetch.empty" };
     if (play.live_streams?.hls) return { error: "content.video.live" };
@@ -59,13 +61,26 @@ export default async function(obj) {
     });
 
     const fileMetadata = {
-        title: cleanString(play.title.trim()),
-        artist: cleanString(play.author.name.trim()),
+        title: play.title.trim(),
+        artist: play.author.name.trim(),
+    }
+
+    let subtitles;
+    if (obj.subtitleLang && play.captions?.length) {
+        const subtitle = play.captions.find(
+            s => ["webvtt", "srt"].includes(s.format) && s.code.startsWith(obj.subtitleLang)
+        );
+
+        if (subtitle) {
+            subtitles = subtitle.file;
+            fileMetadata.sublanguage = obj.subtitleLang;
+        }
     }
 
     return {
         urls: matchingQuality.uri,
-        isM3U8: true,
+        subtitles,
+        isHLS: true,
         filenameAttributes: {
             service: "rutube",
             id: obj.id,

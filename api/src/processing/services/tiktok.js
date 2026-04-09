@@ -1,9 +1,10 @@
 import Cookie from "../cookie/cookie.js";
 
-import { extract } from "../url.js";
+import { extract, normalizeURL } from "../url.js";
 import { genericUserAgent } from "../../config.js";
 import { updateCookie } from "../cookie/manager.js";
 import { createStream } from "../../stream/manage.js";
+import { convertLanguageCode } from "../../misc/language-codes.js";
 
 const shortDomain = "https://vt.tiktok.com/";
 
@@ -12,7 +13,7 @@ export default async function(obj) {
     let postId = obj.postId;
 
     if (!postId) {
-        let html = await fetch(`${shortDomain}${obj.id}`, {
+        let html = await fetch(`${shortDomain}${obj.shortLink}`, {
             redirect: "manual",
             headers: {
                 "user-agent": genericUserAgent.split(' Chrome/1')[0]
@@ -23,14 +24,16 @@ export default async function(obj) {
 
         if (html.startsWith('<a href="https://')) {
             const extractedURL = html.split('<a href="')[1].split('?')[0];
-            const { patternMatch } = extract(extractedURL);
-            postId = patternMatch.postId
+            const { host, patternMatch } = extract(normalizeURL(extractedURL));
+            if (host === "tiktok") {
+                postId = patternMatch?.postId;
+            }
         }
     }
     if (!postId) return { error: "fetch.short_link" };
 
     // should always be /video/, even for photos
-    const res = await fetch(`https://tiktok.com/@i/video/${postId}`, {
+    const res = await fetch(`https://www.tiktok.com/@i/video/${postId}`, {
         headers: {
             "user-agent": genericUserAgent,
             cookie,
@@ -44,20 +47,39 @@ export default async function(obj) {
     try {
         const json = html
             .split('<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">')[1]
-            .split('</script>')[0]
-        const data = JSON.parse(json)
-        detail = data["__DEFAULT_SCOPE__"]["webapp.video-detail"]["itemInfo"]["itemStruct"]
+            .split('</script>')[0];
+
+        const data = JSON.parse(json);
+        const videoDetail = data["__DEFAULT_SCOPE__"]["webapp.video-detail"];
+
+        if (!videoDetail) throw "no video detail found";
+
+        // status_deleted or etc
+        if (videoDetail.statusMsg) {
+            return { error: "content.post.unavailable"};
+        }
+
+        detail = videoDetail?.itemInfo?.itemStruct;
     } catch {
         return { error: "fetch.fail" };
     }
 
+    if (detail.isContentClassified) {
+        return { error: "content.post.age" };
+    }
+
+    if (!detail.author) {
+        return { error: "fetch.empty" };
+    }
+
     let video, videoFilename, audioFilename, audio, images,
-        filenameBase = `tiktok_${detail.author.uniqueId}_${postId}`,
+        filenameBase = `tiktok_${detail.author?.uniqueId}_${postId}`,
         bestAudio; // will get defaulted to m4a later on in match-action
 
     images = detail.imagePost?.images;
 
-    let playAddr = detail.video.playAddr;
+    let playAddr = detail.video?.playAddr;
+
     if (obj.h265) {
         const h265PlayAddr = detail?.video?.bitrateInfo?.find(b => b.CodecType.includes("h265"))?.PlayAddr.UrlList[0]
         playAddr = h265PlayAddr || playAddr
@@ -78,8 +100,23 @@ export default async function(obj) {
     }
 
     if (video) {
+        let subtitles, fileMetadata;
+        if (obj.subtitleLang && detail?.video?.subtitleInfos?.length) {
+            const langCode = convertLanguageCode(obj.subtitleLang);
+            const subtitle = detail?.video?.subtitleInfos.find(
+                s => s.LanguageCodeName.startsWith(langCode) && s.Format === "webvtt"
+            )
+            if (subtitle) {
+                subtitles = subtitle.Url;
+                fileMetadata = {
+                    sublanguage: langCode,
+                }
+            }
+        }
         return {
             urls: video,
+            subtitles,
+            fileMetadata,
             filename: videoFilename,
             headers: { cookie }
         }
@@ -102,7 +139,7 @@ export default async function(obj) {
                 if (obj.alwaysProxy) url = createStream({
                     service: "tiktok",
                     type: "proxy",
-                    u: url,
+                    url,
                     filename: `${filenameBase}_photo_${i + 1}.jpg`
                 })
 
@@ -131,4 +168,6 @@ export default async function(obj) {
             headers: { cookie }
         }
     }
+
+    return { error: "fetch.empty" };
 }

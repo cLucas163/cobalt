@@ -43,10 +43,25 @@
         border-bottom-left-radius: 0;
     }
 
+    .switcher:not(.big):dir(rtl) :global(.button:first-child) {
+        border-top-right-radius: inherit;
+        border-bottom-right-radius: inherit;
+        border-top-left-radius: 0;
+        border-bottom-left-radius: 0;
+    }
+
+    .switcher:not(.big):dir(rtl) :global(.button:last-child) {
+        border-top-left-radius: inherit;
+        border-bottom-left-radius: inherit;
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
+    }
+
     .switcher.big {
         background: var(--button);
         box-shadow: var(--button-box-shadow);
         padding: var(--switcher-padding);
+        gap: calc(var(--switcher-padding) - 1.5px);
     }
 
     .switcher :global(.button.active) {
@@ -60,16 +75,17 @@
     .switcher.big :global(.button) {
         width: 100%;
         /* [base button height] - ([switcher padding] * [padding factor to accommodate for]) */
-        height: calc(40px - var(--switcher-padding) * 1.5);
-        border-radius: calc(var(--border-radius) - var(--switcher-padding));;
-    }
-
-    .switcher.big :global(.button:not(:focus-visible)) {
+        height: calc(40px - var(--switcher-padding) * 2);
+        border-radius: calc(var(--border-radius) - var(--switcher-padding));
         box-shadow: none;
     }
 
     .switcher.big :global(.button:not(.active, :hover, :active)) {
         background-color: transparent;
+    }
+
+    .switcher.big :global(.button:active:not(.active)) {
+        box-shadow: var(--button-box-shadow);
     }
 
     .switcher:not(.big) :global(.button:not(:first-child, :last-child)) {
@@ -78,6 +94,6 @@
 
     /* hack to get rid of double border in a list of switches */
     .switcher:not(.big) :global(:not(.button:first-child)) {
-        margin-left: -1.5px;
+        margin-left: -1px;
     }
 </style>

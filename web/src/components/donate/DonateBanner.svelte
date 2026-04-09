@@ -5,8 +5,6 @@
 
     import Imput from "$components/icons/Imput.svelte";
     import Meowbalt from "$components/misc/Meowbalt.svelte";
-
-    import IconHeart from "@tabler/icons-svelte/IconHeart.svelte";
 </script>
 
 <header id="banner">
@@ -20,7 +18,6 @@
                 class="redaction"
                 tabindex="-1"
                 data-first-focus
-                data-focus-ring-hidden
             >
                 {$t("donate.banner.title")}
             </div>
@@ -102,6 +99,10 @@
         bottom: 0;
     }
 
+    #banner-right:dir(rtl) {
+        position: relative;
+    }
+
     #imput-logo {
         display: flex;
     }
@@ -116,11 +117,16 @@
         flex-direction: column;
         justify-content: center;
         color: white;
-        padding: 48px;
+        padding: 47px;
         padding-right: 0;
         gap: 14px;
         white-space: pre-wrap;
         max-width: 55%;
+    }
+
+    #banner-left:dir(rtl) {
+        padding-right: 47px;
+        padding-left: 0px;
     }
 
     #banner-title {
@@ -204,11 +210,6 @@
             display: none;
         }
 
-        #banner-left {
-            max-width: 100%;
-            padding: 55px;
-        }
-
         #banner-background {
             mask-image: linear-gradient(
                 180deg,
@@ -221,7 +222,9 @@
             justify-content: center;
         }
 
-        #banner-left {
+        #banner-left,
+        #banner-left:dir(rtl) {
+            max-width: 100%;
             padding: 45px 12px;
             gap: 14px;
             align-items: center;
@@ -240,7 +243,8 @@
     }
 
     @media screen and (max-width: 550px) {
-        #banner-left {
+        #banner-left,
+        #banner-left:dir(rtl) {
             padding: 32px 12px;
             gap: 12px;
         }

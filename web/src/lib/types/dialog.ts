@@ -1,3 +1,4 @@
+import type { CobaltFileUrlType } from "$lib/types/api";
 import type { MeowbaltEmotions } from "$lib/types/meowbalt";
 
 export type DialogButton = {
@@ -5,7 +6,8 @@ export type DialogButton = {
     color?: "red",
     main: boolean,
     timeout?: number, // milliseconds
-    action: () => unknown | Promise<unknown>
+    action: () => unknown | Promise<unknown>,
+    link?: string
 }
 
 export type SmallDialogIcons = "warn-red";
@@ -43,6 +45,7 @@ type SavingDialog = Dialog & {
     bodyText?: string,
     url?: string,
     file?: File,
+    urlType?: CobaltFileUrlType,
 };
 
 export type DialogInfo = SmallDialog | PickerDialog | SavingDialog;

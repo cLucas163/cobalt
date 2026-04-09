@@ -11,16 +11,21 @@
 
     import IconLock from "@tabler/icons-svelte/IconLock.svelte";
     import IconSunHigh from "@tabler/icons-svelte/IconSunHigh.svelte";
+    import IconAccessible from "@tabler/icons-svelte/IconAccessible.svelte";
 
     import IconMovie from "@tabler/icons-svelte/IconMovie.svelte";
     import IconMusic from "@tabler/icons-svelte/IconMusic.svelte";
     import IconFileDownload from "@tabler/icons-svelte/IconFileDownload.svelte";
 
-    import IconBug from "@tabler/icons-svelte/IconBug.svelte";
+    import IconCpu from "@tabler/icons-svelte/IconCpu.svelte";
     import IconWorld from "@tabler/icons-svelte/IconWorld.svelte";
-    import IconSettingsBolt from "@tabler/icons-svelte/IconSettingsBolt.svelte";
 
-    $: versionText = $version ? `v${$version.version}-${$version.commit.slice(0, 8)}` : '\xa0';
+    import IconBug from "@tabler/icons-svelte/IconBug.svelte";
+    import IconAdjustmentsStar from "@tabler/icons-svelte/IconAdjustmentsStar.svelte";
+
+    $: versionText = $version
+        ? `v${$version.version}-${$version.commit.slice(0, 8)}`
+        : "\xa0";
 </script>
 
 <PageNav
@@ -32,68 +37,73 @@
     <svelte:fragment slot="navigation">
         <PageNavSection>
             <PageNavTab
-                tabPath="/settings/appearance"
-                tabTitle={$t("settings.page.appearance")}
+                path="/settings/appearance"
+                title={$t("settings.page.appearance")}
+                icon={IconSunHigh}
                 iconColor="blue"
-            >
-                <IconSunHigh />
-            </PageNavTab>
+            />
             <PageNavTab
-                tabPath="/settings/privacy"
-                tabTitle={$t("settings.page.privacy")}
-                iconColor="blue"
-            >
-                <IconLock />
-            </PageNavTab>
+                path="/settings/accessibility"
+                title={$t("settings.page.accessibility")}
+                icon={IconAccessible}
+                iconColor="purple"
+            />
         </PageNavSection>
 
         <PageNavSection>
             <PageNavTab
-                tabPath="/settings/video"
-                tabTitle={$t("settings.page.video")}
-                iconColor="green"
-            >
-                <IconMovie />
-            </PageNavTab>
+                path="/settings/video"
+                title={$t("settings.page.video")}
+                icon={IconMovie}
+                iconColor="magenta"
+            />
             <PageNavTab
-                tabPath="/settings/audio"
-                tabTitle={$t("settings.page.audio")}
-                iconColor="green"
-            >
-                <IconMusic />
-            </PageNavTab>
+                path="/settings/audio"
+                title={$t("settings.page.audio")}
+                icon={IconMusic}
+                iconColor="orange"
+            />
             <PageNavTab
-                tabPath="/settings/download"
-                tabTitle={$t("settings.page.download")}
+                path="/settings/metadata"
+                title={$t("settings.page.metadata")}
+                icon={IconFileDownload}
                 iconColor="green"
-            >
-                <IconFileDownload />
-            </PageNavTab>
+            />
         </PageNavSection>
 
         <PageNavSection>
             <PageNavTab
-                tabPath="/settings/instances"
-                tabTitle={$t("settings.page.instances")}
-                iconColor="gray"
-            >
-                <IconWorld />
-            </PageNavTab>
+                path="/settings/local"
+                title={$t("settings.page.local")}
+                icon={IconCpu}
+                iconColor="blue"
+            />
             <PageNavTab
-                tabPath="/settings/advanced"
-                tabTitle={$t("settings.page.advanced")}
+                path="/settings/instances"
+                title={$t("settings.page.instances")}
+                icon={IconWorld}
+                iconColor="purple"
+            />
+        </PageNavSection>
+
+        <PageNavSection>
+            <PageNavTab
+                path="/settings/privacy"
+                title={$t("settings.page.privacy")}
+                icon={IconLock}
                 iconColor="gray"
-            >
-                <IconSettingsBolt />
-            </PageNavTab>
+            />
+            <PageNavTab
+                path="/settings/advanced"
+                title={$t("settings.page.advanced")}
+                icon={IconAdjustmentsStar}
+            />
             {#if $settings.advanced.debug}
                 <PageNavTab
-                    tabPath="/settings/debug"
-                    tabTitle={$t("settings.page.debug")}
-                    iconColor="gray"
-                >
-                    <IconBug />
-                </PageNavTab>
+                    path="/settings/debug"
+                    title={$t("settings.page.debug")}
+                    icon={IconBug}
+                />
             {/if}
         </PageNavSection>
     </svelte:fragment>

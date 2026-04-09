@@ -3,6 +3,7 @@
     import { device } from "$lib/device";
     import locale from "$lib/i18n/locale";
     import { t } from "$lib/i18n/translations";
+    import { hapticConfirm } from "$lib/haptics";
 
     import { openURL, copyURL, shareURL } from "$lib/download";
 
@@ -51,15 +52,18 @@
                 id="action-button-copy"
                 class="action-button"
                 on:click={async () => {
-                    copyURL(cobaltUrl);
-                    copied = true;
+                    if (!copied) {
+                        copyURL(cobaltUrl);
+                        hapticConfirm();
+                        copied = true;
+                    }
                 }}
                 aria-label={copied ? $t("button.copied") : ""}
             >
                 <div class="action-button-icon">
                     <CopyIcon check={copied} />
                 </div>
-                copy
+                {$t("button.copy")}
             </button>
 
             {#if device.supports.share}
@@ -111,8 +115,9 @@
 <style>
     :global(#share-box) {
         padding: var(--donate-card-main-padding);
-        min-width: 300px;
+        min-width: 320px;
         width: fit-content;
+        transition: box-shadow 0.15s;
     }
 
     #share-card-header {
@@ -139,7 +144,6 @@
         display: flex;
         flex-direction: row;
         gap: 12px;
-        max-height: 140px;
     }
 
     #share-qr {
@@ -152,18 +156,15 @@
     }
 
     #share-qr :global(svg) {
-        width: 140px;
-        height: 140px;
+        width: 132px;
+        height: 132px;
         border-radius: 12px;
         box-shadow: 0 0 0 2px rgba(255, 255, 255, var(--donate-border-opacity));
     }
 
-    #share-qr:focus-visible {
-        box-shadow: none !important;
-    }
-
     #share-qr:focus-visible :global(svg) {
-        box-shadow: 0 0 0 2px var(--blue);
+        outline: var(--focus-ring);
+        outline-offset: var(--focus-ring-offset);
     }
 
     #action-buttons {
@@ -176,7 +177,7 @@
     .action-button {
         align-items: center;
         width: 100%;
-        padding: 0 10px;
+        padding: 0 6px;
         font-size: 13px;
         gap: 2px;
     }
@@ -198,8 +199,7 @@
         z-index: 1;
         box-shadow:
             0 0 0 2px rgba(255, 255, 255, var(--donate-border-opacity)) inset,
-            0 0 10px 2px rgba(0, 0, 0, 0.5);
-        transition: box-shadow 0.15s;
+            0 0 20px 3px rgba(0, 0, 0, 0.5);
     }
 
     :global(#share-box.expanded #share-qr svg) {

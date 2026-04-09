@@ -1,13 +1,24 @@
 <script lang="ts">
-    import { t } from "$lib/i18n/translations";
+    import settings from "$lib/state/settings";
 
+    import { device } from "$lib/device";
     import { themeOptions } from "$lib/types/settings";
+    import { t, locales } from "$lib/i18n/translations";
 
     import Switcher from "$components/buttons/Switcher.svelte";
     import SettingsButton from "$components/buttons/SettingsButton.svelte";
     import SettingsToggle from "$components/buttons/SettingsToggle.svelte";
     import SettingsCategory from "$components/settings/SettingsCategory.svelte";
-    import LanguageDropdown from "$components/settings/LanguageDropdown.svelte";
+    import SettingsDropdown from "$components/settings/SettingsDropdown.svelte";
+
+    const dropdownItems = () => {
+        return $locales.reduce((obj, lang) => {
+            return {
+                ...obj,
+                [lang]: $t(`languages.${lang}`),
+            };
+        }, {});
+    };
 </script>
 
 <SettingsCategory sectionId="theme" title={$t("settings.theme")}>
@@ -31,23 +42,26 @@
         title={$t("settings.language.auto.title")}
         description={$t("settings.language.auto.description")}
     />
-    <LanguageDropdown />
+
+    <SettingsDropdown
+        title={$t("settings.language.preferred.title")}
+        description={$t("settings.language.preferred.description")}
+        items={dropdownItems()}
+        settingContext="appearance"
+        settingId="language"
+        selectedOption={$settings.appearance.language}
+        selectedTitle={$t(`languages.${$settings.appearance.language}`)}
+        disabled={$settings.appearance.autoLanguage}
+    />
 </SettingsCategory>
 
-<SettingsCategory
-    sectionId="accessibility"
-    title={$t("settings.accessibility")}
->
-    <SettingsToggle
-        settingContext="appearance"
-        settingId="reduceTransparency"
-        title={$t("settings.accessibility.transparency.title")}
-        description={$t("settings.accessibility.transparency.description")}
-    />
-    <SettingsToggle
-        settingContext="appearance"
-        settingId="reduceMotion"
-        title={$t("settings.accessibility.motion.title")}
-        description={$t("settings.accessibility.motion.description")}
-    />
-</SettingsCategory>
+{#if device.is.mobile}
+    <SettingsCategory sectionId="tabs" title={$t("settings.tabs")}>
+        <SettingsToggle
+            settingContext="appearance"
+            settingId="hideRemuxTab"
+            title={$t("settings.tabs.hide_remux")}
+            description={$t("settings.tabs.hide_remux.description")}
+        />
+    </SettingsCategory>
+{/if}

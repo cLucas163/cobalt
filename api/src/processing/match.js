@@ -19,7 +19,6 @@ import tumblr from "./services/tumblr.js";
 import vimeo from "./services/vimeo.js";
 import soundcloud from "./services/soundcloud.js";
 import instagram from "./services/instagram.js";
-import vine from "./services/vine.js";
 import pinterest from "./services/pinterest.js";
 import streamable from "./services/streamable.js";
 import twitch from "./services/twitch.js";
@@ -29,10 +28,11 @@ import snapchat from "./services/snapchat.js";
 import loom from "./services/loom.js";
 import facebook from "./services/facebook.js";
 import bluesky from "./services/bluesky.js";
+import newgrounds from "./services/newgrounds.js";
 
 let freebind;
 
-export default async function({ host, patternMatch, params }) {
+export default async function({ host, patternMatch, params, authType }) {
     const { url } = params;
     assert(url instanceof URL);
     let dispatcher, requestIP;
@@ -65,22 +65,36 @@ export default async function({ host, patternMatch, params }) {
             });
         }
 
+        // youtubeHLS will be fully removed in the future
+        let youtubeHLS = params.youtubeHLS;
+        const hlsEnv = env.enableDeprecatedYoutubeHls;
+
+        if (hlsEnv === "never" || (hlsEnv === "key" && authType !== "key")) {
+            youtubeHLS = false;
+        }
+
+        const subtitleLang =
+            params.subtitleLang !== "none" ? params.subtitleLang : undefined;
+
         switch (host) {
             case "twitter":
                 r = await twitter({
                     id: patternMatch.id,
                     index: patternMatch.index - 1,
-                    toGif: !!params.twitterGif,
+                    toGif: !!params.convertGif,
                     alwaysProxy: params.alwaysProxy,
-                    dispatcher
+                    dispatcher,
+                    subtitleLang
                 });
                 break;
 
             case "vk":
                 r = await vk({
-                    userId: patternMatch.userId,
+                    ownerId: patternMatch.ownerId,
                     videoId: patternMatch.videoId,
-                    quality: params.videoQuality
+                    accessKey: patternMatch.accessKey,
+                    quality: params.videoQuality,
+                    subtitleLang,
                 });
                 break;
 
@@ -97,20 +111,27 @@ export default async function({ host, patternMatch, params }) {
 
             case "youtube":
                 let fetchInfo = {
+                    dispatcher,
                     id: patternMatch.id.slice(0, 11),
                     quality: params.videoQuality,
-                    format: params.youtubeVideoCodec,
+                    codec: params.youtubeVideoCodec,
+                    container: params.youtubeVideoContainer,
                     isAudioOnly,
                     isAudioMuted,
                     dubLang: params.youtubeDubLang,
-                    dispatcher
+                    youtubeHLS,
+                    subtitleLang,
                 }
 
                 if (url.hostname === "music.youtube.com" || isAudioOnly) {
-                    fetchInfo.quality = "max";
-                    fetchInfo.format = "vp9";
+                    fetchInfo.quality = "1080";
+                    fetchInfo.codec = "vp9";
                     fetchInfo.isAudioOnly = true;
                     fetchInfo.isAudioMuted = false;
+
+                    if (env.ytAllowBetterAudio && params.youtubeBetterAudio) {
+                        fetchInfo.quality = "max";
+                    }
                 }
 
                 r = await youtube(fetchInfo);
@@ -118,20 +139,20 @@ export default async function({ host, patternMatch, params }) {
 
             case "reddit":
                 r = await reddit({
-                    sub: patternMatch.sub,
-                    id: patternMatch.id,
-                    user: patternMatch.user
+                    ...patternMatch,
+                    dispatcher,
                 });
                 break;
 
             case "tiktok":
                 r = await tiktok({
                     postId: patternMatch.postId,
-                    id: patternMatch.id,
+                    shortLink: patternMatch.shortLink,
                     fullAudio: params.tiktokFullAudio,
                     isAudioOnly,
-                    h265: params.tiktokH265,
+                    h265: params.allowH265,
                     alwaysProxy: params.alwaysProxy,
+                    subtitleLang,
                 });
                 break;
 
@@ -149,6 +170,7 @@ export default async function({ host, patternMatch, params }) {
                     password: patternMatch.password,
                     quality: params.videoQuality,
                     isAudioOnly,
+                    subtitleLang,
                 });
                 break;
 
@@ -156,12 +178,8 @@ export default async function({ host, patternMatch, params }) {
                 isAudioOnly = true;
                 isAudioMuted = false;
                 r = await soundcloud({
-                    url,
-                    author: patternMatch.author,
-                    song: patternMatch.song,
+                    ...patternMatch,
                     format: params.audioFormat,
-                    shortLink: patternMatch.shortLink || false,
-                    accessKey: patternMatch.accessKey || false
                 });
                 break;
 
@@ -172,12 +190,6 @@ export default async function({ host, patternMatch, params }) {
                     alwaysProxy: params.alwaysProxy,
                     dispatcher
                 })
-                break;
-
-            case "vine":
-                r = await vine({
-                    id: patternMatch.id
-                });
                 break;
 
             case "pinterest":
@@ -210,6 +222,7 @@ export default async function({ host, patternMatch, params }) {
                     key: patternMatch.key,
                     quality: params.videoQuality,
                     isAudioOnly,
+                    subtitleLang,
                 });
                 break;
 
@@ -226,20 +239,30 @@ export default async function({ host, patternMatch, params }) {
 
             case "loom":
                 r = await loom({
-                    id: patternMatch.id
+                    id: patternMatch.id,
+                    subtitleLang,
                 });
                 break;
 
             case "facebook":
                 r = await facebook({
-                    ...patternMatch
+                    ...patternMatch,
+                    dispatcher
                 });
                 break;
 
             case "bsky":
                 r = await bluesky({
                     ...patternMatch,
-                    alwaysProxy: params.alwaysProxy
+                    alwaysProxy: params.alwaysProxy,
+                    dispatcher
+                });
+                break;
+
+            case "newgrounds":
+                r = await newgrounds({
+                    ...patternMatch,
+                    quality: params.videoQuality,
                 });
                 break;
 
@@ -265,7 +288,7 @@ export default async function({ host, patternMatch, params }) {
             switch(r.error) {
                 case "content.too_long":
                     context = {
-                        limit: env.durationLimit / 60,
+                        limit: parseFloat((env.durationLimit / 60).toFixed(2)),
                     }
                     break;
 
@@ -286,6 +309,15 @@ export default async function({ host, patternMatch, params }) {
             })
         }
 
+        let localProcessing = params.localProcessing;
+        const lpEnv = env.forceLocalProcessing;
+        const shouldForceLocal = lpEnv === "always" || (lpEnv === "session" && authType === "session");
+        const localDisabled = (!localProcessing || localProcessing === "disabled");
+
+        if (shouldForceLocal && localDisabled) {
+            localProcessing = "preferred";
+        }
+
         return matchAction({
             r,
             host,
@@ -294,10 +326,11 @@ export default async function({ host, patternMatch, params }) {
             isAudioMuted,
             disableMetadata: params.disableMetadata,
             filenameStyle: params.filenameStyle,
-            twitterGif: params.twitterGif,
+            convertGif: params.convertGif,
             requestIP,
             audioBitrate: params.audioBitrate,
-            alwaysProxy: params.alwaysProxy,
+            alwaysProxy: params.alwaysProxy || localProcessing === "forced",
+            localProcessing,
         })
     } catch {
         return createResponse("error", {

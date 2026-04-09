@@ -1,12 +1,13 @@
 import UrlPattern from "url-pattern";
 
-export const audioIgnore = ["vk", "ok", "loom"];
-export const hlsExceptions = ["dailymotion", "vimeo", "rutube", "bsky"];
+export const audioIgnore = new Set(["vk", "ok", "loom"]);
+export const hlsExceptions = new Set(["dailymotion", "vimeo", "rutube", "bsky", "youtube"]);
 
 export const services = {
     bilibili: {
         patterns: [
             "video/:comId",
+            "video/:comId?p=:partId",
             "_shortLink/:comShortLink",
             "_tv/:lang/video/:tvId",
             "_tv/video/:tvId"
@@ -30,23 +31,35 @@ export const services = {
             "reel/:id",
             "share/:shareType/:id"
         ],
-        subdomains: ["web"],
+        subdomains: ["web", "m"],
         altDomains: ["fb.watch"],
     },
     instagram: {
         patterns: [
-            "reels/:postId",
-            ":username/reel/:postId",
-            "reel/:postId",
             "p/:postId",
-            ":username/p/:postId",
             "tv/:postId",
-            "stories/:username/:storyId"
+            "reel/:postId",
+            "reels/:postId",
+            "stories/:username/:storyId",
+
+            /*
+                share & username links use the same url pattern,
+                so we test the share pattern first, cuz id type is different.
+                however, if someone has the "share" username and the user
+                somehow gets a link of this ancient style, it's joever.
+            */
+
+            "share/:shareId",
+            "share/p/:shareId",
+            "share/reel/:shareId",
+
+            ":username/p/:postId",
+            ":username/reel/:postId",
         ],
         altDomains: ["ddinstagram.com"],
     },
     loom: {
-        patterns: ["share/:id"],
+        patterns: ["share/:id", "embed/:id"],
     },
     ok: {
         patterns: [
@@ -62,10 +75,31 @@ export const services = {
             "url_shortener/:shortLink"
         ],
     },
+    newgrounds: {
+        patterns: [
+            "portal/view/:id",
+            "audio/listen/:audioId",
+        ]
+    },
     reddit: {
         patterns: [
+            "comments/:id",
+
+            "r/:sub/comments/:id",
             "r/:sub/comments/:id/:title",
-            "user/:user/comments/:id/:title"
+            "r/:sub/comments/:id/comment/:commentId",
+
+            "user/:user/comments/:id",
+            "user/:user/comments/:id/:title",
+            "user/:user/comments/:id/comment/:commentId",
+
+            "r/u_:user/comments/:id",
+            "r/u_:user/comments/:id/:title",
+            "r/u_:user/comments/:id/comment/:commentId",
+
+            "r/:sub/s/:shareId",
+
+            "video/:shortId",
         ],
         subdomains: "*",
     },
@@ -89,6 +123,7 @@ export const services = {
             "add/:username",
             "u/:username",
             "t/:shortLink",
+            "o/:spotlightId",
         ],
         subdomains: ["t", "story"],
     },
@@ -111,12 +146,13 @@ export const services = {
     tiktok: {
         patterns: [
             ":user/video/:postId",
-            ":id",
-            "t/:id",
+            "i18n/share/video/:postId",
+            ":shortLink",
+            "t/:shortLink",
             ":user/photo/:postId",
-            "v/:id.html"
+            "v/:postId.html"
         ],
-        subdomains: ["vt", "vm", "m"],
+        subdomains: ["vt", "vm", "m", "t", "pro"],
     },
     tumblr: {
         patterns: [
@@ -130,6 +166,7 @@ export const services = {
     twitch: {
         patterns: [":channel/clip/:clip"],
         tld: "tv",
+        subdomains: ["clips", "www", "m"],
     },
     twitter: {
         patterns: [
@@ -137,37 +174,43 @@ export const services = {
             ":user/status/:id/video/:index",
             ":user/status/:id/photo/:index",
             ":user/status/:id/mediaviewer",
-            ":user/status/:id/mediaViewer"
+            ":user/status/:id/mediaViewer",
+            "i/bookmarks?post_id=:id"
         ],
         subdomains: ["mobile"],
         altDomains: ["x.com", "vxtwitter.com", "fixvx.com"],
-    },
-    vine: {
-        patterns: ["v/:id"],
-        tld: "co",
     },
     vimeo: {
         patterns: [
             ":id",
             "video/:id",
             ":id/:password",
-            "/channels/:user/:id"
+            "/channels/:user/:id",
+            "groups/:groupId/videos/:id"
         ],
         subdomains: ["player"],
     },
     vk: {
         patterns: [
-            "video:userId_:videoId",
-            "clip:userId_:videoId",
-            "clips:duplicate?z=clip:userId_:videoId"
+            "video:ownerId_:videoId",
+            "clip:ownerId_:videoId",
+            "video:ownerId_:videoId_:accessKey",
+            "clip:ownerId_:videoId_:accessKey",
+
+            // links with a duplicate author id and/or zipper query param
+            "clips:duplicateId",
+            "videos:duplicateId",
+            "search/video"
         ],
         subdomains: ["m"],
+        altDomains: ["vkvideo.ru", "vk.ru"],
     },
     youtube: {
         patterns: [
             "watch?v=:id",
             "embed/:id",
-            "watch/:id"
+            "watch/:id",
+            "v/:id"
         ],
         subdomains: ["music", "m"],
     }
@@ -176,7 +219,7 @@ export const services = {
 Object.values(services).forEach(service => {
     service.patterns = service.patterns.map(
         pattern => new UrlPattern(pattern, {
-            segmentValueCharset: UrlPattern.defaultOptions.segmentValueCharset + '@\\.'
+            segmentValueCharset: UrlPattern.defaultOptions.segmentValueCharset + '@\\.:'
         })
     )
 })

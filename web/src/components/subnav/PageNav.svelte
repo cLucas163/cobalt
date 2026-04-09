@@ -17,7 +17,7 @@
 
     let screenWidth: number;
 
-    $: currentPageTitle = $page.url.pathname.split("/").at(-1);
+    $: currentPageTitle = $page.url.pathname.split("/").pop();
     $: stringPageTitle =
         currentPageTitle !== pageName
             ? ` / ${$t(`${pageName}.page.${currentPageTitle}`)}`
@@ -63,7 +63,6 @@
                     aria-level="1"
                     tabindex="-1"
                     data-first-focus
-                    data-focus-ring-hidden
                 >
                     {#if !isHome}
                         {$t(`${pageName}.page.${currentPageTitle}`)}
@@ -73,7 +72,10 @@
                 </h3>
             {:else}
                 {#if pageSubtitle}
-                    <div class="subtext subnav-subtitle">
+                    <div
+                        class="subtext subnav-subtitle"
+                        class:hidden={pageSubtitle === "\xa0"}
+                    >
                         {pageSubtitle}
                     </div>
                 {/if}
@@ -89,7 +91,10 @@
         >
             <slot name="navigation"></slot>
             {#if isMobile && isHome && pageSubtitle}
-                <div class="subtext subnav-subtitle center">
+                <div
+                    class="subtext subnav-subtitle center"
+                    class:hidden={pageSubtitle === "\xa0"}
+                >
                     {pageSubtitle}
                 </div>
             {/if}
@@ -104,7 +109,6 @@
             class:wide={wideContent}
             tabindex="-1"
             data-first-focus
-            data-focus-ring-hidden
         >
             <slot name="content"></slot>
         </main>
@@ -114,13 +118,19 @@
 <style>
     .subnav-page {
         --subnav-nav-width: 250px;
-        --subnav-padding: 30px;
+        --subnav-padding: 26px;
         --subnav-padding-small: calc(var(--subnav-padding) - var(--padding));
         display: grid;
         width: 100%;
         grid-template-columns: var(--subnav-nav-width) 1fr;
         overflow: hidden;
         padding-left: var(--subnav-padding);
+        column-gap: calc(var(--subnav-padding) / 2);
+    }
+
+    .subnav-page:dir(rtl) {
+        padding-left: 0;
+        padding-right: var(--subnav-padding);
     }
 
     .subnav-page-content {
@@ -132,7 +142,7 @@
     }
 
     .subnav-page-content.wide {
-        max-width: 800px;
+        max-width: 700px;
     }
 
     .subnav-page-content.padding {
@@ -170,6 +180,11 @@
 
     .subnav-subtitle {
         padding: 0;
+        transition: opacity 0.1s;
+    }
+
+    .subnav-subtitle.hidden {
+        opacity: 0;
     }
 
     .subnav-subtitle.center {
@@ -199,8 +214,15 @@
         will-change: transform;
     }
 
-    @media screen and (max-width: 750px) {
+    @media screen and (max-width: 1000px) {
         .subnav-page {
+            column-gap: 0;
+        }
+    }
+
+    @media screen and (max-width: 750px) {
+        .subnav-page,
+        .subnav-page:dir(rtl) {
             --subnav-nav-width: 100%;
             display: flex;
             flex-direction: column;

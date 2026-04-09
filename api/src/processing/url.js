@@ -1,8 +1,9 @@
-import psl from "psl";
+import psl from "@imput/psl";
 import { strict as assert } from "node:assert";
 
 import { env } from "../config.js";
 import { services } from "./service-config.js";
+import { getRedirectingURL } from "../misc/utils.js";
 import { friendlyServiceName } from "./service-alias.js";
 
 function aliasURL(url) {
@@ -16,7 +17,7 @@ function aliasURL(url) {
             if (url.pathname.startsWith('/live/') || url.pathname.startsWith('/shorts/')) {
                 url.pathname = '/watch';
                 // parts := ['', 'live' || 'shorts', id, ...rest]
-                url.search = `?v=${encodeURIComponent(parts[2])}`
+                url.search = `?v=${encodeURIComponent(parts[2])}`;
             }
             break;
 
@@ -42,7 +43,7 @@ function aliasURL(url) {
         case "fixvx":
         case "x":
             if (services.twitter.altDomains.includes(url.hostname)) {
-                url.hostname = 'twitter.com'
+                url.hostname = 'twitter.com';
             }
             break;
 
@@ -60,23 +61,23 @@ function aliasURL(url) {
 
         case "b23":
             if (url.hostname === 'b23.tv' && parts.length === 2) {
-                url = new URL(`https://bilibili.com/_shortLink/${parts[1]}`)
+                url = new URL(`https://bilibili.com/_shortLink/${parts[1]}`);
             }
             break;
 
         case "dai":
             if (url.hostname === 'dai.ly' && parts.length === 2) {
-                url = new URL(`https://dailymotion.com/video/${parts[1]}`)
+                url = new URL(`https://dailymotion.com/video/${parts[1]}`);
             }
             break;
 
         case "facebook":
         case "fb":
             if (url.searchParams.get('v')) {
-                url = new URL(`https://web.facebook.com/user/videos/${url.searchParams.get('v')}`)
+                url = new URL(`https://web.facebook.com/user/videos/${url.searchParams.get('v')}`);
             }
             if (url.hostname === 'fb.watch') {
-                url = new URL(`https://web.facebook.com/_shortLink/${parts[1]}`)
+                url = new URL(`https://web.facebook.com/_shortLink/${parts[1]}`);
             }
             break;
 
@@ -85,9 +86,34 @@ function aliasURL(url) {
                 url.hostname = 'instagram.com';
             }
             break;
+
+        case "vk":
+        case "vkvideo":
+            if (services.vk.altDomains.includes(url.hostname)) {
+                url.hostname = 'vk.com';
+            }
+            if (url.searchParams.get('z')) {
+                url = new URL(`https://vk.com/${url.searchParams.get('z')}`);
+            }
+            break;
+
+        case "loom":
+            const idPart = parts[parts.length - 1];
+            if (idPart.length > 32) {
+                url.pathname = `/share/${idPart.slice(-32)}`;
+            }
+            break;
+
+        case "redd":
+            /* reddit short video links can be treated by changing https://v.redd.it/<id>
+            to https://reddit.com/video/<id>.*/
+            if (url.hostname === "v.redd.it" && parts.length === 2) {
+                url = new URL(`https://www.reddit.com/video/${parts[1]}`);
+            }
+            break;
     }
 
-    return url
+    return url;
 }
 
 function cleanURL(url) {
@@ -107,31 +133,37 @@ function cleanURL(url) {
             break;
         case "vk":
             if (url.pathname.includes('/clip') && url.searchParams.get('z')) {
-                limitQuery('z')
+                limitQuery('z');
             }
             break;
         case "youtube":
             if (url.searchParams.get('v')) {
-                limitQuery('v')
+                limitQuery('v');
             }
             break;
+        case "bilibili":
         case "rutube":
             if (url.searchParams.get('p')) {
-                limitQuery('p')
+                limitQuery('p');
+            }
+            break;
+        case "twitter":
+            if (url.searchParams.get('post_id')) {
+                limitQuery('post_id');
             }
             break;
     }
 
     if (stripQuery) {
-        url.search = ''
+        url.search = '';
     }
 
-    url.username = url.password = url.port = url.hash = ''
+    url.username = url.password = url.port = url.hash = '';
 
     if (url.pathname.endsWith('/'))
         url.pathname = url.pathname.slice(0, -1);
 
-    return url
+    return url;
 }
 
 function getHostIfValid(url) {
@@ -157,7 +189,7 @@ export function normalizeURL(url) {
     );
 }
 
-export function extract(url) {
+export function extract(url, enabledServices = env.enabledServices) {
     if (!(url instanceof URL)) {
         url = new URL(url);
     }
@@ -168,7 +200,12 @@ export function extract(url) {
         return { error: "link.invalid" };
     }
 
-    if (!env.enabledServices.has(host)) {
+    if (!enabledServices.has(host)) {
+        // show a different message when youtube is disabled on official instances
+        // as it only happens when shit hits the fan
+        if (new URL(env.apiURL).hostname.endsWith(".imput.net") && host === "youtube") {
+            return { error: "youtube.disabled_main_instance" };
+        }
         return { error: "service.disabled" };
     }
 
@@ -193,4 +230,18 @@ export function extract(url) {
     }
 
     return { host, patternMatch };
+}
+
+export async function resolveRedirectingURL(url, dispatcher, headers) {
+    const originalService = getHostIfValid(normalizeURL(url));
+    if (!originalService) return;
+
+    const canonicalURL = await getRedirectingURL(url, dispatcher, headers);
+    if (!canonicalURL) return;
+
+    const { host, patternMatch } = extract(normalizeURL(canonicalURL));
+
+    if (host === originalService) {
+        return patternMatch;
+    }
 }

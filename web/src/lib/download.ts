@@ -4,16 +4,31 @@ import settings from "$lib/state/settings";
 
 import { device } from "$lib/device";
 import { t } from "$lib/i18n/translations";
+import { createDialog } from "$lib/state/dialogs";
 
-import { createDialog } from "$lib/dialogs";
 import type { DialogInfo } from "$lib/types/dialog";
+import type { CobaltFileUrlType } from "$lib/types/api";
 
-const openSavingDialog = ({ url, file, body }: { url?: string, file?: File, body?: string }) => {
+type DownloadFileParams = {
+    url?: string,
+    file?: File,
+    urlType?: CobaltFileUrlType,
+}
+
+type SavingDialogParams = {
+    url?: string,
+    file?: File,
+    body?: string,
+    urlType?: CobaltFileUrlType,
+}
+
+const openSavingDialog = ({ url, file, body, urlType }: SavingDialogParams) => {
     const dialogData: DialogInfo = {
         type: "saving",
         id: "saving",
         file,
         url,
+        urlType,
     }
     if (body) dialogData.bodyText = body;
 
@@ -27,24 +42,24 @@ export const openFile = (file: File) => {
     a.href = url;
     a.download = file.name;
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 export const shareFile = async (file: File) => {
     return await navigator?.share({
-        files: [
-            new File([file], file.name, {
-                type: file.type,
-            }),
-        ],
+        files: [ file ],
     });
 }
 
-export const openURL = (url: string) => {
-    const open = window.open(url, "_blank");
+export const openURL = (url: string, hasDialog = false) => {
+    if (!['http:', 'https:'].includes(new URL(url).protocol)) {
+        return alert('error: invalid url!');
+    }
+
+    const open = window.open(url, "_blank", "noopener,noreferrer");
 
     /* if new tab got blocked by user agent, show a saving dialog */
-    if (!open) {
+    if (!open && !hasDialog) {
         return openSavingDialog({
             url,
             body: get(t)("dialog.saving.blocked")
@@ -60,13 +75,13 @@ export const copyURL = async (url: string) => {
     return await navigator?.clipboard?.writeText(url);
 }
 
-export const downloadFile = ({ url, file }: { url?: string, file?: File }) => {
+export const downloadFile = ({ url, file, urlType }: DownloadFileParams) => {
     if (!url && !file) throw new Error("attempted to download void");
 
     const pref = get(settings).save.savingMethod;
 
     if (pref === "ask") {
-        return openSavingDialog({ url, file });
+        return openSavingDialog({ url, file, urlType });
     }
 
     /*
@@ -85,14 +100,29 @@ export const downloadFile = ({ url, file }: { url?: string, file?: File }) => {
             url,
             file,
             body: get(t)("dialog.saving.timeout"),
+            urlType
         });
     }
 
     try {
         if (file) {
+            // 256mb cuz ram limit per tab is 384mb,
+            // and other stuff (such as libav) might have used some ram too
+            const iosFileShareSizeLimit = 1024 * 1024 * 256;
+
+            // this is required because we can't share big files
+            // on ios due to a very low ram limit
+            if (device.is.iOS) {
+                if (file.size < iosFileShareSizeLimit) {
+                    return shareFile(file);
+                } else {
+                    return openFile(file);
+                }
+            }
+
             if (pref === "share" && device.supports.share) {
                 return shareFile(file);
-            } else if (pref === "download" && device.supports.directDownload) {
+            } else if (pref === "download") {
                 return openFile(file);
             }
         }
@@ -100,7 +130,8 @@ export const downloadFile = ({ url, file }: { url?: string, file?: File }) => {
         if (url) {
             if (pref === "share" && device.supports.share) {
                 return shareURL(url);
-            } else if (pref === "download" && device.supports.directDownload) {
+            } else if (pref === "download" && device.supports.directDownload
+                    && !(device.is.iOS && urlType === "redirect")) {
                 return openURL(url);
             } else if (pref === "copy" && !file) {
                 return copyURL(url);
@@ -108,5 +139,5 @@ export const downloadFile = ({ url, file }: { url?: string, file?: File }) => {
         }
     } catch { /* catch & ignore */ }
 
-    return openSavingDialog({ url, file });
+    return openSavingDialog({ url, file, urlType });
 }

@@ -8,9 +8,9 @@
 
     import IconLock from "@tabler/icons-svelte/IconLock.svelte";
     import IconComet from "@tabler/icons-svelte/IconComet.svelte";
-    import IconLicense from "@tabler/icons-svelte/IconLicense.svelte";
     import IconChecklist from "@tabler/icons-svelte/IconChecklist.svelte";
     import IconUsersGroup from "@tabler/icons-svelte/IconUsersGroup.svelte";
+    import IconHeartHandshake from "@tabler/icons-svelte/IconHeartHandshake.svelte";
 </script>
 
 <PageNav
@@ -23,43 +23,38 @@
     <svelte:fragment slot="navigation">
         <PageNavSection>
             <PageNavTab
-                tabPath="/about/general"
-                tabTitle={$t("about.page.general")}
+                path="/about/general"
+                title={$t("about.page.general")}
+                icon={IconComet}
                 iconColor="blue"
-            >
-                <IconComet />
-            </PageNavTab>
+            />
             <PageNavTab
-                tabPath="/about/community"
-                tabTitle={$t("about.page.community")}
-                iconColor="green"
-            >
-                <IconUsersGroup />
-            </PageNavTab>
+                path="/about/community"
+                title={$t("about.page.community")}
+                icon={IconUsersGroup}
+                iconColor="purple"
+            />
         </PageNavSection>
 
         <PageNavSection>
             <PageNavTab
-                tabPath="/about/terms"
-                tabTitle={$t("about.page.terms")}
-                iconColor="gray"
-            >
-                <IconChecklist />
-            </PageNavTab>
+                path="/about/privacy"
+                title={$t("about.page.privacy")}
+                icon={IconLock}
+                iconColor="blue"
+            />
             <PageNavTab
-                tabPath="/about/privacy"
-                tabTitle={$t("about.page.privacy")}
-                iconColor="gray"
-            >
-                <IconLock />
-            </PageNavTab>
+                path="/about/terms"
+                title={$t("about.page.terms")}
+                icon={IconChecklist}
+                iconColor="green"
+            />
             <PageNavTab
-                tabPath="/about/credits"
-                tabTitle={$t("about.page.credits")}
-                iconColor="gray"
-            >
-                <IconLicense />
-            </PageNavTab>
+                path="/about/credits"
+                title={$t("about.page.credits")}
+                icon={IconHeartHandshake}
+                iconColor="magenta"
+            />
         </PageNavSection>
     </svelte:fragment>
 

@@ -1,29 +1,31 @@
 <script lang="ts">
-    import { page } from "$app/stores";
+    import env, { officialApiURL } from "$lib/env";
+
+    import { tick } from "svelte";
+    import { page } from "$app/state";
     import { goto } from "$app/navigation";
     import { browser } from "$app/environment";
-    import { SvelteComponent, tick } from "svelte";
 
-    import env from "$lib/env";
     import { t } from "$lib/i18n/translations";
 
-    import dialogs from "$lib/dialogs";
-
+    import dialogs from "$lib/state/dialogs";
     import { link } from "$lib/state/omnibox";
+    import { hapticSwitch } from "$lib/haptics";
     import { updateSetting } from "$lib/state/settings";
-    import { turnstileCreated } from "$lib/state/turnstile";
+    import { savingHandler } from "$lib/api/saving-handler";
+    import { pasteLinkFromClipboard } from "$lib/clipboard";
+    import { turnstileEnabled, turnstileSolved } from "$lib/state/turnstile";
 
     import type { Optional } from "$lib/types/generic";
     import type { DownloadModeOption } from "$lib/types/settings";
-
-    import IconLink from "@tabler/icons-svelte/IconLink.svelte";
-    import IconLoader2 from "@tabler/icons-svelte/IconLoader2.svelte";
 
     import ClearButton from "$components/save/buttons/ClearButton.svelte";
     import DownloadButton from "$components/save/buttons/DownloadButton.svelte";
 
     import Switcher from "$components/buttons/Switcher.svelte";
+    import OmniboxIcon from "$components/save/OmniboxIcon.svelte";
     import ActionButton from "$components/buttons/ActionButton.svelte";
+    import CaptchaTooltip from "$components/save/CaptchaTooltip.svelte";
     import SettingsButton from "$components/buttons/SettingsButton.svelte";
 
     import IconMute from "$components/icons/Mute.svelte";
@@ -32,53 +34,67 @@
     import IconClipboard from "$components/icons/Clipboard.svelte";
 
     let linkInput: Optional<HTMLInputElement>;
-    let downloadButton: SvelteComponent;
-
-    let isFocused = false;
-    let isDisabled = false;
 
     const validLink = (url: string) => {
         try {
-            return /^https:/i.test(new URL(url).protocol);
+            return /^https?\:/i.test(new URL(url).protocol);
         } catch {}
     };
 
-    $: linkFromHash = $page.url.hash.replace("#", "") || "";
-    $: linkFromQuery = (browser ? $page.url.searchParams.get("u") : 0) || "";
+    let isFocused = $state(false);
+    let isDisabled = $state(false);
+    let isLoading = $state(false);
 
-    $: if (linkFromHash || linkFromQuery) {
-        if (validLink(linkFromHash)) {
-            $link = linkFromHash;
-        } else if (validLink(linkFromQuery)) {
-            $link = linkFromQuery;
+    let isHovered = $state(false);
+
+    let isBotCheckOngoing = $derived($turnstileEnabled && !$turnstileSolved);
+
+    let linkPrefill = $derived(
+        page.url.hash.replace("#", "")
+        || (browser ? page.url.searchParams.get("u") : "")
+        || ""
+    );
+
+    let downloadable = $derived(validLink($link));
+    let clearVisible = $derived($link && !isLoading);
+
+    $effect (() => {
+        if (linkPrefill) {
+            // prefilled link may be uri encoded
+            linkPrefill = decodeURIComponent(linkPrefill);
+
+            if (validLink(linkPrefill)) {
+                $link = linkPrefill;
+            }
+
+            // clear hash and query to prevent bookmarking unwanted links
+            if (browser) goto("/", { replaceState: true });
+
+            // clear link prefill to avoid extra effects
+            linkPrefill = "";
+
+            savingHandler({ url: $link });
         }
+    });
 
-        // clear hash and query to prevent bookmarking unwanted links
-        goto("/", { replaceState: true });
-    }
-
-    $: if (env.TURNSTILE_KEY) {
-        if ($turnstileCreated) {
-            isDisabled = false;
-        } else {
-            isDisabled = true;
-        }
-    }
-
-    const pasteClipboard = () => {
-        if (isDisabled || $dialogs.length > 0) {
+    const pasteClipboard = async () => {
+        if ($dialogs.length > 0 || isDisabled || isLoading) {
             return;
         }
 
-        navigator.clipboard.readText().then(async (text: string) => {
-            let matchLink = text.match(/https:\/\/[^\s]+/g);
-            if (matchLink) {
-                $link = matchLink[0];
+        hapticSwitch();
 
-                await tick(); // wait for button to render
-                downloadButton.download($link);
-            }
-        });
+        const pastedData = await pasteLinkFromClipboard();
+        if (!pastedData) return;
+
+        const linkMatch = pastedData.match(/https?\:\/\/[^\s]+/g);
+
+        if (linkMatch) {
+            $link = linkMatch[0].split('，')[0];
+
+            await tick(); // wait for button to render
+            savingHandler({ url: $link });
+        }
     };
 
     const changeDownloadMode = (mode: DownloadModeOption) => {
@@ -86,7 +102,7 @@
     };
 
     const handleKeydown = (e: KeyboardEvent) => {
-        if (!linkInput || $dialogs.length > 0 || isDisabled) {
+        if (!linkInput || $dialogs.length > 0 || isDisabled || isLoading) {
             return;
         }
 
@@ -95,7 +111,7 @@
         }
 
         if (e.key === "Enter" && validLink($link) && isFocused) {
-            downloadButton.download($link);
+            savingHandler({ url: $link });
         }
 
         if (["Escape", "Clear"].includes(e.key) && isFocused) {
@@ -125,49 +141,60 @@
     };
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
+
+<!--
+    if you want to remove the community instance label,
+    refer to the license first https://github.com/imputnet/cobalt/tree/main/web#license
+-->
+{#if env.DEFAULT_API !== officialApiURL}
+    <div id="instance-label">
+        {$t("save.label.community_instance")}
+    </div>
+{/if}
 
 <div id="omnibox">
+    {#if $turnstileEnabled}
+        <CaptchaTooltip
+            visible={isBotCheckOngoing && (isHovered || isFocused)}
+        />
+    {/if}
+
     <div
         id="input-container"
         class:focused={isFocused}
-        class:downloadable={validLink($link)}
+        class:downloadable
+        class:clear-visible={clearVisible}
     >
-        <div id="input-link-icon" class:loading={isDisabled}>
-            {#if isDisabled}
-                <IconLoader2 />
-            {:else}
-                <IconLink />
-            {/if}
-        </div>
+        <OmniboxIcon loading={isLoading || isBotCheckOngoing} />
 
         <input
             id="link-area"
             bind:value={$link}
             bind:this={linkInput}
-            on:input={() => (isFocused = true)}
-            on:focus={() => (isFocused = true)}
-            on:blur={() => (isFocused = false)}
+            oninput={() => (isFocused = true)}
+            onfocus={() => (isFocused = true)}
+            onblur={() => (isFocused = false)}
+            onmouseover={() => (isHovered = true)}
+            onmouseleave={() => (isHovered = false)}
             spellcheck="false"
             autocomplete="off"
             autocapitalize="off"
             maxlength="512"
             placeholder={$t("save.input.placeholder")}
-            aria-label={$t("a11y.save.link_area")}
+            aria-label={isBotCheckOngoing
+                ? $t("a11y.save.link_area.turnstile")
+                : $t("a11y.save.link_area")}
             data-form-type="other"
             disabled={isDisabled}
         />
 
-        {#if $link}
-            <ClearButton click={() => ($link = "")} />
-        {/if}
-        {#if validLink($link)}
-            <DownloadButton
-                url={$link}
-                bind:this={downloadButton}
-                bind:disabled={isDisabled}
-            />
-        {/if}
+        <ClearButton click={() => ($link = "")} />
+        <DownloadButton
+            url={$link}
+            bind:disabled={isDisabled}
+            bind:loading={isLoading}
+        />
     </div>
 
     <div id="action-container">
@@ -212,58 +239,61 @@
         flex-direction: column;
         max-width: 640px;
         width: 100%;
-        gap: 10px;
+        gap: 6px;
+        position: relative;
     }
 
     #input-container {
+        --input-padding: 10px;
         display: flex;
         box-shadow: 0 0 0 1.5px var(--input-border) inset;
+        /* webkit can't render the 1.5px box shadow properly,
+           so we duplicate the border as outline to fix it visually */
+        outline: 1.5px solid var(--input-border);
+        outline-offset: -1.5px;
         border-radius: var(--border-radius);
-        padding: 0 10px;
         align-items: center;
-        gap: 10px;
+        gap: var(--input-padding);
         font-size: 14px;
         flex: 1;
+    }
+
+    #input-container:not(.clear-visible) :global(#clear-button) {
+        display: none;
+    }
+
+    #input-container:not(.downloadable) :global(#download-button) {
+        display: none;
+    }
+
+    #input-container.clear-visible {
+        padding-right: var(--input-padding);
+    }
+
+    :global([dir="rtl"]) #input-container.clear-visible {
+        padding-right: unset;
+        padding-left: var(--input-padding);
     }
 
     #input-container.downloadable {
         padding-right: 0;
     }
 
+    #input-container.downloadable:dir(rtl) {
+        padding-left: 0;
+    }
+
     #input-container.focused {
-        box-shadow: 0 0 0 1.5px var(--secondary) inset;
-        outline: var(--secondary) 0.5px solid;
+        box-shadow: none;
+        outline: var(--secondary) 2px solid;
+        outline-offset: -1px;
     }
 
-    #input-link-icon {
-        display: flex;
-    }
-
-    #input-link-icon :global(svg) {
-        stroke: var(--gray);
-        width: 18px;
-        height: 18px;
-        stroke-width: 2px;
-    }
-
-    #input-link-icon.loading :global(svg) {
-        animation: spin 0.7s infinite linear;
-    }
-
-    @keyframes spin {
-        0% {
-            transform: rotate(0deg);
-        }
-        100% {
-            transform: rotate(360deg);
-        }
-    }
-
-    #input-container.focused #input-link-icon :global(svg) {
+    #input-container.focused :global(#input-icons svg) {
         stroke: var(--secondary);
     }
 
-    #input-container.downloadable #input-link-icon :global(svg) {
+    #input-container.downloadable :global(#input-icons svg) {
         stroke: var(--secondary);
     }
 
@@ -271,7 +301,8 @@
         display: flex;
         width: 100%;
         margin: 0;
-        padding: 10px 0;
+        padding: var(--input-padding) 0;
+        padding-left: calc(var(--input-padding) + 28px);
         height: 18px;
 
         align-items: center;
@@ -288,10 +319,14 @@
 
         /* workaround for safari */
         font-size: inherit;
+
+        /* prevents input from poking outside of rounded corners */
+        border-radius: var(--border-radius);
     }
 
-    #link-area:focus-visible {
-        box-shadow: unset !important;
+    :global([dir="rtl"]) #link-area {
+        padding-left: unset;
+        padding-right: calc(var(--input-padding) + 28px);
     }
 
     #link-area::placeholder {
@@ -316,6 +351,12 @@
 
     #paste-mobile-text {
         display: none;
+    }
+
+    #instance-label {
+        font-size: 13px;
+        color: var(--gray);
+        font-weight: 500;
     }
 
     @media screen and (max-width: 440px) {

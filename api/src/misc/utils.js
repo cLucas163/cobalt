@@ -1,55 +1,43 @@
-const forbiddenCharsString = ['}', '{', '%', '>', '<', '^', ';', '`', '$', '"', "@", '='];
+import { request } from "undici";
+const redirectStatuses = new Set([301, 302, 303, 307, 308]);
 
-export function metadataManager(obj) {
-    const keys = Object.keys(obj);
-    const tags = [
-        "album",
-        "copyright",
-        "title",
-        "artist",
-        "track",
-        "date"
-    ]
-    let commands = []
+export async function getRedirectingURL(url, dispatcher, headers) {
+    const params = {
+        dispatcher,
+        method: 'HEAD',
+        headers,
+        redirect: 'manual'
+    };
+    const getParams = {
+        ...params,
+        method: 'GET',
+    };
 
-    for (const i in keys) {
-        if (tags.includes(keys[i]))
-            commands.push('-metadata', `${keys[i]}=${obj[keys[i]]}`)
+    const callback = (r) => {
+        if (redirectStatuses.has(r.statusCode) && r.headers['location']) {
+            return r.headers['location'];
         }
-    return commands;
-}
+    }
 
-export function cleanString(string) {
-    for (const i in forbiddenCharsString) {
-        string = string.replaceAll("/", "_")
-                       .replaceAll(forbiddenCharsString[i], '')
-    }
-    return string;
-}
-export function verifyLanguageCode(code) {
-    const langCode = String(code.slice(0, 2).toLowerCase());
-    if (RegExp(/[a-z]{2}/).test(code)) {
-        return langCode
-    }
-    return "en"
-}
-export function languageCode(req) {
-    if (req.header('Accept-Language')) {
-        return verifyLanguageCode(req.header('Accept-Language'))
-    }
-    return "en"
-}
-export function cleanHTML(html) {
-    let clean = html.replace(/ {4}/g, '');
-    clean = clean.replace(/\n/g, '');
-    return clean
-}
+    /*
+        try request() with HEAD & GET,
+        then do the same with fetch
+        (fetch is required for shortened reddit links)
+    */
 
-export function getRedirectingURL(url) {
-    return fetch(url, { redirect: 'manual' }).then((r) => {
-        if ([301, 302, 303].includes(r.status) && r.headers.has('location'))
-            return r.headers.get('location');
-    }).catch(() => null);
+    let location = await request(url, params)
+        .then(callback).catch(() => null);
+
+    location ??= await request(url, getParams)
+        .then(callback).catch(() => null);
+
+    location ??= await fetch(url, params)
+        .then(callback).catch(() => null);
+
+    location ??= await fetch(url, getParams)
+        .then(callback).catch(() => null);
+
+    return location;
 }
 
 export function merge(a, b) {
@@ -64,4 +52,28 @@ export function merge(a, b) {
     }
 
     return a;
+}
+
+export function splitFilenameExtension(filename) {
+    const parts = filename.split('.');
+    const ext = parts.pop();
+
+    if (!parts.length) {
+        return [ ext, "" ]
+    } else {
+        return [ parts.join('.'), ext ]
+    }
+}
+
+export function zip(a, b) {
+    return a.map((value, i) => [ value, b[i] ]);
+}
+
+export function isURL(input) {
+    try {
+        new URL(input);
+        return true;
+    } catch {
+        return false;
+    }
 }

@@ -1,6 +1,9 @@
-import { get, writable } from "svelte/store";
-import APIUrl from "$lib/state/api-url";
+import { browser } from "$app/environment";
 
+import { get } from "svelte/store";
+import { currentApiURL } from "$lib/api/api-url";
+import { turnstileCreated, turnstileEnabled, turnstileSolved } from "$lib/state/turnstile";
+import cachedInfo from "$lib/state/server-info";
 import type { CobaltServerInfoResponse, CobaltErrorResponse, CobaltServerInfo } from "$lib/types/api";
 
 export type CobaltServerInfoCache = {
@@ -8,10 +11,8 @@ export type CobaltServerInfoCache = {
     origin: string,
 }
 
-export const cachedInfo = writable<CobaltServerInfoCache | undefined>();
-
 const request = async () => {
-    const apiEndpoint = `${get(APIUrl)}/`;
+    const apiEndpoint = `${currentApiURL()}/`;
 
     const response: CobaltServerInfoResponse = await fetch(apiEndpoint, {
         redirect: "manual",
@@ -32,10 +33,18 @@ const request = async () => {
     return response;
 }
 
+// reload the page if turnstile is now disabled, but was previously loaded and not solved
+const reloadIfTurnstileDisabled = () => {
+    if (browser && !get(turnstileEnabled) && get(turnstileCreated) && !get(turnstileSolved)) {
+        window.location.reload();
+    }
+}
+
 export const getServerInfo = async () => {
     const cache = get(cachedInfo);
 
-    if (cache && cache.origin === get(APIUrl)) {
+    if (cache && cache.origin === currentApiURL()) {
+        reloadIfTurnstileDisabled();
         return true
     }
 
@@ -48,8 +57,16 @@ export const getServerInfo = async () => {
     if (!("status" in freshInfo)) {
         cachedInfo.set({
             info: freshInfo,
-            origin: get(APIUrl),
+            origin: currentApiURL(),
         });
+
+        // reload the page if turnstile sitekey changed
+        if (browser && get(turnstileEnabled) && cache && cache?.info?.cobalt?.turnstileSitekey !== freshInfo?.cobalt?.turnstileSitekey) {
+            window.location.reload();
+        }
+
+        reloadIfTurnstileDisabled();
+
         return true;
     }
 

@@ -1,12 +1,14 @@
-import { defineConfig, searchForWorkspaceRoot, type PluginOption } from "vite";
-import { sveltekit } from "@sveltejs/kit/vite";
-import basicSSL from "@vitejs/plugin-basic-ssl";
-import { glob } from "glob";
 import mime from "mime";
+import basicSSL from "@vitejs/plugin-basic-ssl";
 
-import { cp, readdir, mkdir } from "node:fs/promises";
-import { createReadStream } from "node:fs";
+import { glob } from "glob";
+import { sveltekit } from "@sveltejs/kit/vite";
+import { createSitemap } from "svelte-sitemap/src/index";
+import { defineConfig, searchForWorkspaceRoot, type PluginOption } from "vite";
+
 import { join, basename } from "node:path";
+import { createReadStream } from "node:fs";
+import { cp, readdir, mkdir } from "node:fs/promises";
 
 const exposeLibAV: PluginOption = (() => {
     const IMPUT_MODULE_DIR = join(__dirname, 'node_modules/@imput');
@@ -19,7 +21,7 @@ const exposeLibAV: PluginOption = (() => {
                 const filename = basename(req.url).split('?')[0];
                 if (!filename) return next();
 
-                const [ file ] = await glob(join(IMPUT_MODULE_DIR, '/**/dist/', filename));
+                const [file] = await glob(join(IMPUT_MODULE_DIR, '/**/dist/', filename));
                 if (!file) return next();
 
                 const fileType = mime.getType(filename);
@@ -43,7 +45,6 @@ const exposeLibAV: PluginOption = (() => {
 
             for (const module of modules) {
                 const distFolder = join(IMPUT_MODULE_DIR, module, 'dist/');
-                console.log(distFolder);
                 await cp(distFolder, assets, { recursive: true });
             }
         }
@@ -61,18 +62,47 @@ const enableCOEP: PluginOption = {
     }
 };
 
+const generateSitemap: PluginOption = {
+    name: "generate-sitemap",
+    async writeBundle(bundle) {
+        if (!process.env.WEB_HOST || !bundle.dir?.endsWith('server')) {
+            return;
+        }
+
+        await createSitemap(`https://${process.env.WEB_HOST}`, {
+            changeFreq: 'monthly',
+            outDir: '.svelte-kit/output/prerendered/pages',
+            resetTime: true
+        });
+    }
+}
+
+const checkDefaultApiEnv = (): PluginOption => ({
+    name: "check-default-api",
+    config() {
+        if (!process.env.WEB_DEFAULT_API) {
+            throw new Error(
+                "WEB_DEFAULT_API env variable is required, but missing."
+            );
+        }
+    },
+});
+
 export default defineConfig({
     plugins: [
+        checkDefaultApiEnv(),
         basicSSL(),
         sveltekit(),
         enableCOEP,
-        exposeLibAV
+        exposeLibAV,
+        generateSitemap
     ],
     build: {
+        sourcemap: true,
         rollupOptions: {
             output: {
                 manualChunks: (id) => {
-                    if (id.includes('/web/i18n')) {
+                    if (id.includes('/web/i18n') && id.endsWith('.json')) {
                         const lang = id.split('/web/i18n/')?.[1].split('/')?.[0];
                         if (lang) {
                             return `i18n_${lang}`;
@@ -95,6 +125,6 @@ export default defineConfig({
         proxy: {}
     },
     optimizeDeps: {
-        exclude: [ "@imput/libav.js-remux-cli" ]
+        exclude: ["@imput/libav.js-remux-cli"]
     },
 });

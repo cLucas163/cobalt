@@ -9,7 +9,7 @@
 
 <style>
     :global(.donate-card) {
-        --donate-card-main-padding: 18px;
+        --donate-card-main-padding: 16px;
         --donate-card-padding: 12px;
 
         display: flex;
@@ -34,35 +34,36 @@
         display: flex;
         flex-direction: column;
         align-items: flex-start;
-        text-align: left;
+        text-align: start;
         border-radius: var(--donate-card-padding);
         background: rgba(255, 255, 255, 0.05);
-        padding: 14px 18px;
+        padding: 12px 16px;
         color: var(--white);
         gap: 0;
         letter-spacing: -0.3px;
     }
 
-    :global(.donate-card button:not(:focus-visible)) {
+    :global(.donate-card button) {
         box-shadow: none;
     }
 
-    :global(.donate-card button:active) {
-        background: rgba(255, 255, 255, 0.1);
-    }
-
     @media (hover: hover) {
-        :global(.donate-card button:hover) {
+        :global(.donate-card button:hover:not(.selected):not(.scroll-button)) {
             background: rgba(255, 255, 255, 0.1);
         }
     }
 
-    :global(.donate-card button.selected) {
-        background: rgba(255, 255, 255, 0.15);
+    :global(.donate-card button:active:not(.selected):not(.scroll-button)) {
+        background: rgba(255, 255, 255, 0.125);
     }
 
-    :global(.donate-card button.selected:not(:focus-visible)) {
-        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1) inset !important;
+    :global(.donate-card button.selected) {
+        background: rgba(255, 255, 255, 0.15);
+        cursor: default;
+    }
+
+    :global(.donate-card button.selected) {
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1) inset;
     }
 
     :global(.donate-card-subtitle) {
@@ -78,11 +79,5 @@
         font-size: 16px;
         gap: 4px;
         font-weight: 500;
-    }
-
-    @media screen and (max-width: 760px) {
-        :global(.donate-card) {
-            --donate-card-main-padding: 16px;
-        }
     }
 </style>
